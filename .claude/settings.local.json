@@ -31,7 +31,13 @@
       "Bash(npm uninstall *)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('lowestPrice:', json.dumps\\(d['data']['lowestPrice'], ensure_ascii=False\\)\\); print\\('platforms count:', len\\(d['data']['platforms']\\)\\)\")",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('category:', d['data']['category']\\); print\\('products:', len\\(d['data']['products']\\)\\)\")",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git config *)",
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(git branch *)",
+      "Bash(git push *)"
     ]
   }
 }
