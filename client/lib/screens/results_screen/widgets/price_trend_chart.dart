@@ -37,9 +37,9 @@ class PriceTrendChart extends StatelessWidget {
       minPrice = 0;
       maxPrice = 100;
     }
-    final priceMargin = (maxPrice - minPrice) * 0.15;
+    final priceMargin = (maxPrice - minPrice) * 0.25;
     minPrice = (minPrice - priceMargin).clamp(0, double.infinity);
-    maxPrice = maxPrice + priceMargin;
+    maxPrice = maxPrice + priceMargin * 1.2;
 
     final lineBars = <LineChartBarData>[];
     int colorIndex = 0;
@@ -143,7 +143,6 @@ class PriceTrendChart extends StatelessWidget {
                     getTitlesWidget: (value, meta) {
                       final idx = value.toInt();
                       if (idx >= 0 && idx < sortedDates.length) {
-                        // Shorten date: "2024-06-01" → "06-01"
                         final short = sortedDates[idx].length >= 10
                             ? sortedDates[idx].substring(5, 10)
                             : sortedDates[idx];

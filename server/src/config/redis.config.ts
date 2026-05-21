@@ -6,3 +6,12 @@ export const redisConfig = {
   port: parseInt(process.env.REDIS_PORT || '6379', 10),
   password: process.env.REDIS_PASSWORD || undefined,
 };
+
+// Bull queue config uses same connection
+export const bullConfig = {
+  redis: {
+    host: redisConfig.host,
+    port: redisConfig.port,
+    password: redisConfig.password,
+  },
+};

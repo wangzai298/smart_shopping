@@ -46,6 +46,17 @@ export class RecognitionService {
 
   async recognize(images: string[]): Promise<RecognitionData> {
     const imageBase64 = Array.isArray(images) && images.length > 0 ? images[0] : '';
+
+    // Content moderation
+    const moderationKey = process.env.CONTENT_MODERATION_KEY;
+    if (moderationKey) {
+      this.logger.log('Checking image content safety...');
+      const safe = await this.checkContentSafety(imageBase64, moderationKey);
+      if (!safe) {
+        throw new Error('图片内容违规');
+      }
+    }
+
     let category: string;
     let brand: string;
     let attributes: Record<string, string>;
@@ -193,5 +204,23 @@ export class RecognitionService {
     }
 
     return this.getMockResult();
+  }
+
+  // ── Content Safety Check ──
+
+  private async checkContentSafety(imageBase64: string, apiKey: string): Promise<boolean> {
+    try {
+      const body = JSON.stringify({ image: imageBase64 });
+      const response = await fetch('https://moderation.example.com/api/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body,
+      });
+      const json = await response.json() as any;
+      return json?.safe !== false;
+    } catch {
+      this.logger.warn('Content moderation API unavailable, skipping check');
+      return true;
+    }
   }
 }
