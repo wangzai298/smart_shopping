@@ -1,0 +1,274 @@
+================================================================
+识物比价购物 AI APP 助手 — 项目说明
+================================================================
+版本：2.9（2026-05-21）
+目标：拍照识物 → 多平台比价 端到端 Demo（Docker 部署 + 骨架屏 + 下拉刷新）
+
+================================================================
+一、项目概述
+================================================================
+
+"识物比价购物助手"完整 Demo，验证以下核心流程：
+
+  0. 用户注册/登录（手机号+验证码，JWT 双令牌）
+  1. 客户端拍照或从相册选取图片（支持多图融合识别）
+  2. 图片压缩后通过 Base64 上传至服务端
+  3. 服务端调用豆包多模态大模型 API 识别商品属性（Key 空时 mock）
+  4. 服务端在 PostgreSQL 商品库中匹配商品，返回各平台最新价格
+  5. 客户端以卡片列表展示比价结果（含收藏按钮）
+  6. 用户点击商品查看多平台历史价格趋势图（fl_chart 折线图 + 历史最低价标记）
+  7. 用户输入自然语言筛选条件（多轮对话，conversationId 串联）
+  8. 商品评价聚合与摘要生成（正面/负面标签 + 总结文字）
+  9. 收藏夹管理（多清单 + 商品管理）
+ 10. 搜索历史自动保存
+ 11. 降价提醒设置、修改与查看（PATCH 更新目标价格）
+ 12. 收藏夹商品点击跳转商品详情
+ 13. 启动页静默登录检测 → 自动跳转首页或登录页
+
+================================================================
+二、技术栈
+================================================================
+
+客户端：Flutter 3.x（Dart 3.x）
+  状态管理       flutter_riverpod 2.5.1
+  网络请求       dio 5.4.0（拦截器 + Token 自动刷新）
+  路由导航       go_router 10.0.0
+  图表展示       fl_chart 0.68.0
+  图片选择       image_picker 1.2.2
+  骨架屏         shimmer 3.0.0
+  安全存储       flutter_secure_storage 10.x（Token 持久化）
+  跨平台         Android / iOS / 鸿蒙（占位）
+
+服务端：Node.js + Nest.js 10（TypeScript 5.x）
+  HTTP 框架      @nestjs/core 10.x
+  数据库         PostgreSQL（TypeORM 0.3.x + pg 驱动）
+  AI 视觉+对话   豆包多模态大模型 API（OpenAI-compatible，单接口通吃）
+  认证           @nestjs/jwt + @nestjs/passport + passport-jwt（双令牌）
+  安全           Helmet + @nestjs/throttler（限流）
+  密码加密       bcryptjs
+  环境变量       dotenv
+  推送           FCM（Demo 日志模式占位）
+  容器化         Docker + docker-compose（PostgreSQL + Redis + App 一键启动）
+
+================================================================
+三、完整目录结构
+================================================================
+
+smart-shopping-assistant/
+│
+├── 任务说明.txt                    原始开发蓝图
+├── 项目说明.txt                    本文件（项目全貌）
+├── 技术说明.txt                    技术详解（含类比，面向非技术读者）
+├── 配置清单.txt                    API Key / 地址 / Demo 账号
+│
+├── server/                         Nest.js 服务端
+│   ├── .env.example                环境变量模板
+│   ├── .env                        实际环境变量（gitignore）
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── main.ts                 启动入口（CORS + Helmet + ValidationPipe）
+│       ├── app.module.ts           根模块（15 个子模块）
+│       ├── config/
+│       │   ├── database.config.ts  PostgreSQL 连接（dotenv 注入）
+│       │   ├── doubao.config.ts    豆包多模态 API（apiKey 留空走 mock）
+│       │   ├── jwt.config.ts       JWT 密钥与过期时间
+│       │   └── redis.config.ts     Redis 配置（NLP 缓存占位）
+│       ├── entities/
+│       │   ├── product.entity.ts       商品（id, name, category, brand, attributes jsonb, imageUrl）
+│       │   ├── price-history.entity.ts 价格历史（productId, platform, price decimal, date date）
+│       │   ├── user.entity.ts          用户（phone, passwordHash, nickname, OAuth字段）
+│       │   ├── review-summary.entity.ts 评价摘要（productId, positiveKeywords, negativeKeywords, summary）
+│       │   ├── favorite-list.entity.ts 收藏清单（userId, name）
+│       │   ├── favorite-item.entity.ts 收藏商品（listId, productId）
+│       │   ├── search-history.entity.ts 搜索历史（userId, imageUrl, resultSnapshot jsonb）
+│       │   └── price-alert.entity.ts   降价提醒（userId, productId, targetPrice, platform, isActive）
+│       ├── common/
+│       │   ├── guards/jwt-auth.guard.ts      JWT 鉴权守卫
+│       │   ├── decorators/current-user.decorator.ts @CurrentUser() 装饰器
+│       │   ├── filters/http-exception.filter.ts   全局异常过滤器
+│       │   └── interceptors/response.interceptor.ts 响应格式化拦截器
+│       └── modules/
+│           ├── auth/                认证模块（register / login / refresh / send-sms-code）
+│           ├── users/               用户信息模块（GET/PATCH /users/me）
+│           ├── recognition/         图像识别模块（POST /recognition/upload，支持 images[]）
+│           ├── product/             商品查询模块（GET /products/search，ILIKE 模糊匹配）
+│           ├── comparison/          比价聚合模块（GET /comparison/:productId）
+│           ├── history/             历史价格模块（GET /products/:id/history，含 lowestPrice）
+│           ├── nlp/                 自然语言筛选（POST /nlp/filter，conversationId 多轮对话）
+│           ├── favorites/           收藏模块（CRUD 清单 + 商品管理）
+│           ├── search-history/      搜索历史（GET/DELETE /search-history）
+│           ├── reviews/             评价摘要（GET /products/:id/reviews）
+│           ├── price-alert/         降价提醒（CRUD /price-alerts）
+│           ├── notification/        推送模块（FCM 占位）
+│           └── seed/                种子数据（30商品 + 630价格 + 测试用户 + 默认清单 + 评价）
+
+├── client/                         Flutter 客户端
+│   ├── pubspec.yaml
+│   ├── lib/
+│   │   ├── main.dart               应用入口（ProviderScope）
+│   │   ├── app.dart                MaterialApp.router + 11 条路由
+│   │   ├── config/api_config.dart  后端地址（模拟器/真机自动检测）
+│   │   ├── models/
+│   │   │   ├── product.dart        商品 + 平台价格
+│   │   │   ├── filter.dart         筛选条件
+│   │   │   └── user.dart           用户模型
+│   │   ├── services/
+│   │   │   ├── api_service.dart    Dio 封装（Token 拦截 + 自动刷新 + 全部业务 API）
+│   │   │   ├── auth_service.dart   登录/注册/短信
+│   │   │   ├── camera_service.dart 拍照/相册/压缩
+│   │   │   └── storage_service.dart flutter_secure_storage 封装
+│   │   ├── providers/
+│   │   │   ├── search_provider.dart   识别结果状态（AsyncNotifier）
+│   │   │   ├── filter_provider.dart   筛选 + conversationId 管理
+│   │   │   └── auth_provider.dart     认证状态（登录/登出/静默检测）
+│   │   ├── screens/
+│   │   │   ├── splash_screen.dart      启动页（静默登录）
+│   │   │   ├── login_screen.dart       登录/注册页
+│   │   │   ├── home_screen.dart        首页（拍照入口 + 个人中心）
+│   │   │   ├── camera_screen.dart      拍照页（预览+确认+权限处理）
+│   │   │   ├── results_screen.dart     比价结果页（筛选+骨架屏+下拉刷新）
+│   │   │   ├── detail_screen.dart      商品详情（价格卡片+趋势图+评价+降价提醒）
+│   │   │   ├── favorites_screen.dart   收藏夹（展开/折叠+商品管理）
+│   │   │   ├── profile_screen.dart     个人中心（收藏/历史/提醒入口+退出）
+│   │   │   ├── search_history_screen.dart 搜索历史（查看/清空）
+│   │   │   ├── price_alerts_screen.dart   降价提醒（列表/删除）
+│   │   │   └── results_screen/widgets/
+│   │   │       ├── product_card.dart       商品卡片（图片+价格行+收藏❤按钮+弹窗选清单）
+│   │   │       ├── price_trend_chart.dart  历史趋势折线图（最低价红色虚线+标签旋转）
+│   │   │       └── review_summary_card.dart 评价摘要卡片（正/负面标签+总结）
+│   │   └── widgets/
+│   │       ├── loading_widget.dart      加载态
+│   │       ├── app_error_widget.dart    错误+重试
+│   │       └── empty_widget.dart        空数据
+│   ├── android/                  Android 原生工程
+│   ├── ios/                      iOS 原生工程
+│   └── harmony/                  鸿蒙工程占位
+│
+└── docs/superpowers/plans/      各阶段实施计划（7 份）
+
+================================================================
+四、数据库表结构
+================================================================
+
+  products (30 条种子数据)
+  ┌──────────┬──────────┬──────────────────┐
+  │ 字段      │ 类型      │ 说明              │
+  ├──────────┼──────────┼──────────────────┤
+  │ id        │ TEXT PK   │ UUID              │
+  │ name      │ TEXT      │ 商品名称           │
+  │ category  │ TEXT      │ 类目               │
+  │ brand     │ TEXT      │ 品牌               │
+  │ attributes│ JSONB     │ 扩展属性           │
+  │ imageUrl  │ TEXT      │ 图片链接           │
+  └──────────┴──────────┴──────────────────┘
+
+  price_history (630 条种子数据 = 30×3×7)
+  ┌──────────┬──────────────┬──────────────────┐
+  │ 字段      │ 类型          │ 说明              │
+  ├──────────┼──────────────┼──────────────────┤
+  │ id        │ SERIAL PK     │ 自增              │
+  │ productId │ TEXT          │ 关联商品           │
+  │ platform  │ TEXT          │ 淘宝/京东/拼多多    │
+  │ price     │ DECIMAL(10,2) │ 价格              │
+  │ date      │ DATE          │ "YYYY-MM-DD"      │
+  └──────────┴──────────────┴──────────────────┘
+
+  users (1 条种子数据: 11111111111 / 298556)
+  ┌─────────────┬──────────┬──────────────────┐
+  │ 字段         │ 类型      │ 说明              │
+  ├─────────────┼──────────┼──────────────────┤
+  │ id           │ UUID PK   │                  │
+  │ phone        │ TEXT      │ 手机号            │
+  │ passwordHash │ TEXT      │ bcrypt 哈希       │
+  │ nickname     │ TEXT      │ 昵称              │
+  │ wechatOpenid │ TEXT      │ 微信 OAuth        │
+  │ alipayUserid │ TEXT      │ 支付宝 OAuth      │
+  │ avatarUrl    │ TEXT      │ 头像              │
+  │ createdAt    │ TIMESTAMPTZ│ 创建时间          │
+  └─────────────┴──────────┴──────────────────┘
+
+  favorite_lists (1 条种子数据: "默认清单")
+  favorite_items
+  review_summaries (2 条种子数据)
+  search_history
+  price_alerts
+
+================================================================
+五、API 接口契约
+================================================================
+
+  ┌─────────────────────────────────────────────────────┐
+  │ 认证接口                                              │
+  ├─────────────────────────────────────────────────────┤
+  │ POST /auth/register     { phone, code, password }    │
+  │ POST /auth/login        { phone, password }          │
+  │ POST /auth/refresh      { refreshToken }             │
+  │ POST /auth/send-sms-code { phone }                   │
+  ├─────────────────────────────────────────────────────┤
+  │ 用户接口（JWT 保护）                                    │
+  ├─────────────────────────────────────────────────────┤
+  │ GET  /users/me                                       │
+  │ PATCH /users/me          { nickname, avatarUrl }     │
+  ├─────────────────────────────────────────────────────┤
+  │ 识别 + 商品 + 比价                                     │
+  ├─────────────────────────────────────────────────────┤
+  │ POST /recognition/upload { images: string[] }        │
+  │ GET  /products/search?category=&brand=               │
+  │ GET  /comparison/:productId                          │
+  │ GET  /products/:id/history   (含 lowestPrice 字段)    │
+  │ GET  /products/:id/reviews   (评价摘要)               │
+  ├─────────────────────────────────────────────────────┤
+  │ NLP 筛选                                              │
+  ├─────────────────────────────────────────────────────┤
+  │ POST /nlp/filter  { query, conversationId?, context? }│
+  │ 响应含 conversationId 支持多轮对话                      │
+  ├─────────────────────────────────────────────────────┤
+  │ 收藏（JWT 保护）                                       │
+  ├─────────────────────────────────────────────────────┤
+  │ GET    /favorites/lists                               │
+  │ POST   /favorites/lists          { name }            │
+  │ DELETE /favorites/lists/:id                          │
+  │ GET    /favorites/lists/:id/items                    │
+  │ POST   /favorites/lists/:id/items { productId }      │
+  │ DELETE /favorites/items/:id                          │
+  ├─────────────────────────────────────────────────────┤
+  │ 搜索历史（JWT 保护）                                    │
+  ├─────────────────────────────────────────────────────┤
+  │ GET    /search-history                               │
+  │ DELETE /search-history                               │
+  │ DELETE /search-history/:id                           │
+  ├─────────────────────────────────────────────────────┤
+  │ 降价提醒（JWT 保护）                                    │
+  ├─────────────────────────────────────────────────────┤
+  │ GET    /price-alerts                                 │
+  │ POST   /price-alerts   { productId, targetPrice }    │
+  │ PATCH  /price-alerts/:id { isActive, targetPrice }   │
+  │ DELETE /price-alerts/:id                             │
+  ├─────────────────────────────────────────────────────┤
+  │ 种子数据                                               │
+  ├─────────────────────────────────────────────────────┤
+  │ GET /seed/init           清空并重填全部数据            │
+  └─────────────────────────────────────────────────────┘
+
+================================================================
+六、关键设计决策
+================================================================
+
+  1. PostgreSQL + pg 驱动 — attributes JSONB, price DECIMAL(10,2), date DATE
+  2. 豆包多模态 API 统一 — 图像识别+NLP 用同一接口，单 doubaoConfig 管理
+  3. Mock 兜底 — Key 为空时识别返回 {运动鞋,Nike}，NLP 用 13 条关键词规则
+  4. DTO 装饰器 — ValidationPipe whitelist 模式下所有 DTO 必须加 @IsString 等装饰器
+  5. Kotlin 增量编译禁用 — Flutter pub 缓存(C:)与项目(D:)跨盘符，gradle.properties 设 kotlin.incremental=false
+  6. 图片压缩 — image_picker maxWidth/Height=1024 + Q80 直接输出，无需二次编解码
+  7. NLP 输出校验 — validateFilter() 白名单：sort(3种) shopType(3种) priceRange(min≥0 max≥0)
+  8. 四状态 UI — loading / error / empty / data，AsyncValue.when() 全覆盖
+  9. 栈式路由 — go_router push/pop（非 go），保留返回历史
+ 10. 权限处理 — 四种结果 success/cancelled/permissionDenied/error，永久拒绝弹 AlertDialog
+ 11. 禁止端侧 AI — 客户端不引入任何 AI SDK，AI 由服务端 REST API 提供
+ 12. Dio 拦截器 — 自动附加 Bearer Token + 401 自动尝试 refresh + 失败跳登录
+ 13. 种子预置 — 30 商品×3 平台×7 个月=630 价格 + 测试用户 + 默认清单 + 评价摘要
+ 14. search_history 自动保存 — recognition 成功后自动记录（userId 可选）
+ 15. 降价提醒弹窗 — detail_screen 中弹出输入目标价，调用 /price-alerts
+
+================================================================

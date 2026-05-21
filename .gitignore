@@ -1,0 +1,38 @@
+# ── Dependencies ──
+server/node_modules/
+client/.dart_tool/
+client/.packages
+client/.flutter-plugins
+client/.flutter-plugins-dependencies
+
+# ── Build ──
+server/dist/
+client/build/
+client/android/.gradle/
+client/android/app/build/
+client/ios/Pods/
+client/ios/.symlinks/
+
+# ── Environment (contains real passwords) ──
+server/.env
+
+# ── IDE ──
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Flutter ──
+client/android/local.properties
+client/ios/Flutter/Generated.xcconfig
+client/ios/Flutter/flutter_export_environment.sh
+
+# ── Misc ──
+*.log
+.codesandbox

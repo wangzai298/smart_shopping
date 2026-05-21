@@ -1,0 +1,952 @@
+================================================================
+识物比价购物 AI APP 助手 — 技术说明（教程版）
+================================================================
+版本：2.0（2026-05-21）
+定位：零基础入门 → 完整项目构建教程
+      用于团队技术交接 / 新人 Onboarding / 技术方案评审
+npm run start:dev 启动服务在server文件夹
+flutter run app调试运行client文件夹
+================================================================
+简历 · 项目经历（STAR 法则）
+================================================================
+
+【项目名称】识物比价 — 基于 AI 多模态大模型的跨平台购物比价助手
+
+【S 情境】线上购物时，消费者需要在淘宝、京东、拼多多等多个平台间
+手动切换比价，耗时且难以追踪历史价格趋势，缺乏统一的购物决策工具。
+
+【T 任务】独立完成一款跨平台（Android/iOS/鸿蒙）移动 App 的完整
+设计与开发。核心功能包括：拍照自动识别商品、多平台价格比较、
+历史价格趋势可视化、自然语言筛选、收藏夹管理、降价提醒、
+用户认证系统，以及 Docker 一键部署方案。
+
+【A 行动】
+  - 客户端：Flutter 3.x + Riverpod 状态管理 + go_router 路由 +
+    Dio 网络层（Token 拦截 + 自动刷新）+ fl_chart 图表 +
+    shimmer 骨架屏 + flutter_secure_storage 安全存储。
+    实现 4 状态 UI（loading/error/empty/data）、栈式导航、
+    权限处理（4 种结果分支）、多轮对话筛选。
+  - 服务端：Nest.js 10 + TypeScript 5 + TypeORM 0.3 + PostgreSQL +
+    JWT 双令牌认证（Access 15min / Refresh 7d）+
+    Passport 策略 + Helmet 安全头 + Throttler 限流 +
+    ValidationPipe 全局校验 + bcryptjs 密码哈希。
+    实现 15 个业务模块（认证/识别/商品/比价/历史/NLP/
+    收藏/搜索历史/评价/降价提醒/推送/种子数据），
+    24 个 REST API 端点。
+  - AI 集成：豆包多模态大模型 API（OpenAI-compatible 格式），
+    统一处理图像识别和 NLP 筛选。Key 空时 Mock 兜底 +
+    13 条中文关键词规则引擎。
+  - 基础设施：Docker + docker-compose 三容器编排
+    （PostgreSQL + Redis + App），Volumes 数据持久化，
+    .env 环境变量注入。
+
+【R 成果】交付完整可运行 Demo（30 商品 × 3 平台 × 7 个月 =
+630 条价格种子数据）。不填任何 API Key 也能跑通全流程（Mock 兜底）。
+一套 Dart 代码同时生成 Android/iOS/鸿蒙三个平台安装包。
+支持 Docker 一行命令启动（docker-compose up -d）。
+
+================================================================
+零、给零基础读者的前言
+================================================================
+
+  本文档假设你：
+  - 从未写过一行代码（但会用电脑）
+  - 听说过 "App""服务器""数据库" 这些词但不知道具体是什么
+  - 想理解"这个项目从头到尾是怎么做出来的"
+
+  会先解释"是什么"和"为什么"，再解释"怎么做"。
+  每个概念配一个生活中的类比，帮助你建立直觉。
+  粗体标记的词可以在最后的术语速查表找到完整解释。
+
+================================================================
+第一章 · 你需要准备的"工具箱"
+================================================================
+
+  做软件就像盖房子，需要先把工具准备好。
+
+  ┌──────────────┬────────────────────┬────────────────────┐
+  │ 工具           │ 干什么用              │ 怎么装              │
+  ├──────────────┼────────────────────┼────────────────────┤
+  │ Node.js 18   │ 运行服务端代码        │ nodejs.org 下载    │
+  │ Flutter SDK  │ 运行客户端代码        │ flutter.dev 下载   │
+  │ PostgreSQL   │ 数据库               │ postgresql.org 下载│
+  │ Docker       │ 容器化部署(可选)      │ docker.com 下载    │
+  │ VS Code      │ 写代码的编辑器        │ 免费下载           │
+  │ Git          │ 版本管理(可选)        │ git-scm.com 下载   │
+  └──────────────┴────────────────────┴────────────────────┘
+
+  类比：这些工具就像"盖房需要的推土机、搅拌机、吊车"。
+  没有这些机器，光有图纸是盖不起房子的。
+
+================================================================
+第二章 · 从零搭建项目骨架（脚手架）
+================================================================
+
+  现代软件开发的第一步不是写代码，而是"搭骨架"。
+  就像盖房子先搭钢结构框架，再填充墙体。
+
+【2.1 创建 Flutter 客户端项目】
+
+  打开终端（黑色命令行窗口），输入：
+    flutter create --org com.example smart_shopping_assistant
+
+  Flutter 会自动生成 50+ 个文件，包括：
+  - android/ 文件夹（Android 原生配置）
+  - ios/ 文件夹（iOS 原生配置）
+  - lib/main.dart（入口文件，App 的第一行代码在此）
+  - pubspec.yaml（依赖声明，类似"购物清单"）
+
+  类比：flutter create 就像"楼盘开发商给你一块地基 + 毛坯房"。
+  你拿到的是一套结构完整的空房子，只需要装修和添家具。
+
+【2.2 创建 Nest.js 服务端项目】
+
+  打开终端，输入：
+    npm i -g @nestjs/cli           # 安装 Nest 脚手架工具
+    nest new smart-shopping-server  # 创建 Nest 项目
+
+  Nest CLI 生成：
+  - src/main.ts（服务启动入口）
+  - src/app.module.ts（根模块，所有功能模块的"总开关"）
+  - package.json（依赖清单）
+  - tsconfig.json（TypeScript 编译配置）
+
+  类比：nest new 就像"租了一个空商铺，水电网络已接通"。
+  你只需要决定往里放什么柜台（模块）。
+
+【2.3 安装项目需要的第三方包（依赖）】
+
+  服务端依赖（server/package.json）：
+  这些是"别人写好的现成工具"，你不用重复造轮子。
+
+  ┌───────────────────────┬──────────────────────────────────┐
+  │ 包名                   │ 作用                              │
+  ├───────────────────────┼──────────────────────────────────┤
+  │ @nestjs/core          │ Nest.js 框架核心（必装）           │
+  │ @nestjs/common        │ 装饰器/工具（@Controller 等）      │
+  │ @nestjs/platform-express│ 让 Nest 跑在 Express HTTP 服务器上│
+  │ @nestjs/typeorm       │ Nest 与 TypeORM 的桥接            │
+  │ typeorm               │ 对象关系映射（代码↔数据库）        │
+  │ pg                    │ PostgreSQL 数据库驱动              │
+  │ @nestjs/jwt           │ JWT 令牌签发与验证                │
+  │ @nestjs/passport      │ 认证策略框架                      │
+  │ passport-jwt          │ JWT 认证策略实现                  │
+  │ @nestjs/throttler     │ API 限流（防滥用）                 │
+  │ helmet                │ HTTP 安全头                       │
+  │ bcryptjs              │ 密码哈希（不可逆加密）             │
+  │ class-validator       │ DTO 数据校验                      │
+  │ class-transformer     │ DTO 数据转换                      │
+  │ dotenv                │ 环境变量加载（.env 文件）          │
+  └───────────────────────┴──────────────────────────────────┘
+
+  安装命令：
+    cd server
+    npm install @nestjs/core @nestjs/common ... (省略全称)
+
+  客户端依赖（client/pubspec.yaml）：
+
+  ┌───────────────────────┬──────────────────────────────────┐
+  │ 包名                   │ 作用                              │
+  ├───────────────────────┼──────────────────────────────────┤
+  │ dio                   │ HTTP 网络请求                     │
+  │ flutter_riverpod      │ 状态管理                          │
+  │ go_router             │ 页面路由导航                      │
+  │ fl_chart              │ 折线图/图表                       │
+  │ image_picker          │ 相机拍照/相册选图                 │
+  │ shimmer               │ 骨架屏加载动画                    │
+  │ flutter_secure_storage│ Token 安全持久化存储              │
+  └───────────────────────┴──────────────────────────────────┘
+
+  安装命令：
+    cd client
+    flutter pub add dio flutter_riverpod go_router ...
+
+  类比：每个包就像"宜家买回来的家具组件"。
+  你不需要自己砍树做桌子，只需要买现成的回来组装。
+
+================================================================
+第三章 · 数据库设计与搭建（数据层）
+================================================================
+
+  数据库是项目的"地基"。地基打不好，房子建再高也会塌。
+
+【3.1 什么是数据库】
+
+  数据库就是"结构化存储数据的地方"。类比 Excel：
+  - 数据库（Database）= 一个 Excel 文件
+  - 表（Table）= 一个 Sheet
+  - 行（Row）= 一行数据
+  - 列（Column）= 一列字段
+
+  本项目使用 PostgreSQL（关系型数据库），存储 8 张表。
+
+【3.2 什么是 ORM（TypeORM）】
+
+  你不用直接写 SQL（数据库语言），而是写 TypeScript 类（Entity）。
+  TypeORM 自动把类的属性翻译成数据库的列。
+
+  比如：
+    @Entity('products')
+    export class Product {
+      @Column() name: string;  // ← 这一行自动变成数据库的"name"列
+    }
+
+  类比：TypeORM 就像一个"即时翻译官"。
+  你对它说中文（TypeScript），它自动翻译成日语（SQL）告诉数据库。
+  数据库用日语回答，它再翻译回中文告诉你。
+
+【3.3 项目中的 8 张表（Entity）】
+
+  ① products 表 — 商品目录
+  ┌──────────┬──────────┬──────────────────────┐
+  │ 字段       │ 类型       │ 说明                   │
+  ├──────────┼──────────┼──────────────────────┤
+  │ id         │ TEXT(PK)   │ 商品唯一标识，如 shoe-001│
+  │ name       │ TEXT       │ 商品名称，如 "Nike Air Max 90 黑白"│
+  │ category   │ TEXT       │ 类目，如"运动鞋"        │
+  │ brand      │ TEXT       │ 品牌，如"Nike"          │
+  │ attributes │ JSONB      │ 扩展属性 {color:"黑白", style:"休闲"}│
+  │ imageUrl   │ TEXT       │ 商品图片网络地址         │
+  └──────────┴──────────┴──────────────────────┘
+
+  ② price_history 表 — 历史价格（每个商品在每个平台每个月的价格）
+  ┌──────────┬──────────────┬──────────────────────┐
+  │ 字段       │ 类型           │ 说明                   │
+  ├──────────┼──────────────┼──────────────────────┤
+  │ id         │ SERIAL(PK)    │ 自增主键               │
+  │ productId  │ TEXT          │ 关联商品 ID             │
+  │ platform   │ TEXT          │ 平台名（淘宝/京东/拼多多）│
+  │ price      │ DECIMAL(10,2) │ 价格（精确到分）         │
+  │ date       │ DATE          │ 日期（如"2025-01-01"）   │
+  └──────────┴──────────────┴──────────────────────┘
+  种子数据量：30 商品 × 3 平台 × 7 个月 = 630 条
+
+  ③ users 表 — 用户账户
+  phone / passwordHash(bcrypt加密) / nickname / wechatOpenid 等
+
+  ④ review_summaries 表 — 评价摘要
+  productId / platform / positiveKeywords[] / negativeKeywords[] / summary
+
+  ⑤ favorite_lists 表 — 收藏清单
+  userId / name / isPublic
+
+  ⑥ favorite_items 表 — 收藏商品
+  listId / productId
+
+  ⑦ search_history 表 — 搜索历史
+  userId / imageUrl / resultSnapshot(JSONB) / createdAt
+
+  ⑧ price_alerts 表 — 降价提醒
+  userId / productId / targetPrice / platform / isActive
+
+【3.4 怎么连接数据库】
+
+  database.config.ts（数据库连接配置文件）：
+    export const databaseConfig = {
+      type: 'postgres',            // 数据库品牌
+      host: 'localhost',           // 地址（本机）
+      port: 5432,                  // 端口号（PostgreSQL 默认）
+      username: 'postgres',        // 用户名
+      password: '298556',          // 密码
+      database: 'smart_shopping',  // 数据库名
+      entities: [Product, PriceHistory, ...],  // 要管理的表
+      synchronize: true,           // 自动建表（开发环境用）
+    };
+
+  synchronize: true 意味着：
+  你改了 Entity（比如加了一个字段），重启服务后数据库自动更新表结构。
+  类比：就像"自动装修公司"，你说要加一个插座（字段），
+  公司在你不在家的时候自动施工完成。
+
+  生产环境会改成 synchronize: false，手工管理数据库变更（Migration）。
+
+================================================================
+第四章 · 服务端模块开发（业务逻辑层）
+================================================================
+
+  服务端的核心设计思想是"模块化"。
+  每个模块是一个功能单元，有明确的输入（谁可以调）和输出（返回什么）。
+  模块之间尽量独立，通过接口（API）通信。
+
+【4.0 模块开发通用步骤】
+
+  类比：新建一个模块就像在公司里"成立一个新部门"。
+  部门需要三个核心角色：
+  1. Controller（前台接待员）：接待外部请求，分发任务
+  2. Service（技术人员）：实际干活的人，处理业务逻辑
+  3. Module（部门注册信息）：告诉公司（AppModule）这个部门存在
+
+  开发步骤：
+  Step 1: 创建文件夹 server/src/modules/<模块名>/
+  Step 2: 写 xxx.service.ts（业务逻辑，含数据库操作）
+  Step 3: 写 xxx.controller.ts（定义 API 端点，@Get/@Post 等）
+  Step 4: 写 xxx.module.ts（注册 Controller + Service + 数据库实体）
+  Step 5: 在 app.module.ts 的 imports 中加入 XxxModule
+
+【4.1 认证模块（AuthModule）— 项目的"门禁系统"】
+
+  API 端点：
+  ┌──────────────────────────────────────────────────────┐
+  │ POST /auth/register    { phone, code, password }     │
+  │   注册新用户。验证短信验证码 → bcrypt 加密密码        │
+  │   → 返回 JWT 双令牌 + 用户信息                        │
+  │                                                      │
+  │ POST /auth/login       { phone, password }           │
+  │   用户登录。查询手机号 → bcrypt 比对密码              │
+  │   → 返回 JWT 双令牌 + 用户信息                        │
+  │                                                      │
+  │ POST /auth/refresh     { refreshToken }              │
+  │   刷新令牌。验证 RefreshToken → 签发新 AccessToken    │
+  │                                                      │
+  │ POST /auth/send-sms-code { phone }                  │
+  │   发送短信验证码（Demo 固定返回 123456）               │
+  └──────────────────────────────────────────────────────┘
+
+  JWT 令牌 — 不是传统"会话"
+  传统方式：服务器记住"谁登录了"（Session），存在内存里。
+  重启服务器 → 所有人都要重新登录。
+
+  JWT 方式：服务器不记"谁登录了"。它"签发一张签名门票"。
+  门票里有用户 ID + 有效期 + 数字签名。
+  用户可以拿这张门票访问服务器，服务器"验票"确认身份。
+  签名防伪：门票是加密签名的，用户无法伪造。
+
+  签名过程（sign）：把 { userId, phone } + 密钥 → 签名 → Token
+  验签过程（verify）：拿出 Token → 用密钥验证签名 → 读用户信息
+
+  类比：JWT Sign = 景区售票处给出"盖章门票"。
+  JWT Verify = 景区入口查票员"验章"。
+  验章通过即放行，不需要打电话回售票处确认。
+
+  为什么用双令牌：
+  AccessToken（15分钟有效期）：用于日常验证。即使被盗，15分钟后失效。
+  RefreshToken（7天有效期）：只存在手机安全存储中，仅用于刷新 AccessToken。
+  这样即使网络窃听，攻击者也只能拿到短暂的 AccessToken。
+
+【4.2 图像识别模块（RecognitionModule）— 项目的"核心引擎"】
+
+  API：POST /recognition/upload { images: ["base64...", ...] }
+
+  工作流程（数据在代码中的流转路径）：
+  照片 Base64 → DTO 校验（@IsArray/@ArrayMinSize 确保至少 1 张图）
+  → RecognitionController.upload()
+  → RecognitionService.recognize()
+    ├─ 有 AI Key → 调豆包多模态 API（OpenAI 兼容格式）
+    │   请求体：{ model, messages: [{ role: "system", content: "你是商品识别助手..." }, { role: "user", content: [image_url, text] }] }
+    │   解析返回的 JSON 提取 category/brand/attributes
+    └─ 无 AI Key → Mock 返回 { category: "运动鞋", brand: "Nike" }
+  → matchProducts(category, brand)
+    查询 products 表 WHERE category = '运动鞋'
+    → 对每个匹配商品，子查询各平台最新价格：
+      SELECT ... FROM price_history WHERE date = (SELECT MAX(date) FROM price_history WHERE same productId AND same platform)
+    → 计算最低价 → 附 shopType 映射 { 淘宝:C店, 京东:旗舰店, 拼多多:旗舰店 }
+  → 返回 { category, brand, attributes, products[] }
+  → 自动保存搜索历史（从请求头 Authorization 提取 JWT → 解析 userId）
+
+  图片怎么传输：Base64 编码
+  原始照片是二进制数据（0 和 1 组成），无法直接在 JSON 文本中传输。
+  Base64 是一种编码方式，把二进制数据转成纯文本的字母数字串。
+  服务端收到后可以还原为图片。
+
+  类比：Base64 就像"把一盒巧克力（二进制）装在快递盒（JSON）里邮寄"。
+  巧克力直接寄会碎，装盒子里就安全了。收件人打开盒就能还原。
+
+【4.3 商品/比价/历史模块 — 数据查询三件套】
+
+  ① ProductModule（商品搜索）
+  API：GET /products/search?category=运动鞋&brand=Nike
+  使用 PostgreSQL 的 ILIKE（大小写不敏感模糊匹配）：
+  WHERE category ILIKE '%运动鞋%' AND brand ILIKE '%Nike%'
+  每个匹配商品附最新各平台价格。
+
+  为什么用 ILIKE 而不是 LIKE：
+  LIKE 区分大小写（'nike' 找不到 'Nike'），ILIKE 不区分。
+  用户输入"nike"或"NIKE"都能找到。
+
+  ② ComparisonModule（单商品比价）
+  API：GET /comparison/:productId
+  聚合一个商品在各平台的最新价格，计算最低价和最低价平台。
+
+  ③ HistoryModule（历史价格趋势）
+  API：GET /products/:id/history
+  响应结构变化（2.2 版本后新增 lowestPrice 字段）：
+  {
+    productId,                              // 商品 ID
+    lowestPrice: { price: 749, platform: "拼多多", date: "2024-06-01" },
+    platforms: { "淘宝": [{date, price}...], "京东": [...], ... }
+  }
+  遍历所有价格记录，按 platform 分组，同时找出全时段最低价。
+
+【4.4 NLP 模块 — 自然语言→结构化筛选】
+
+  API：POST /nlp/filter { query, conversationId?, context? }
+
+  工作流程：
+  query "要便宜点的Nike旗舰店"
+  → 有 AI Key：调用豆包 API
+    System Prompt：定义输出 Schema
+    Few-shot 示例：教模型理解"便宜点→price_asc"
+    返回 JSON { sort: "price_asc", shopType: "旗舰店", brand: "Nike" }
+  → 无 AI Key：applyRules() 关键词规则引擎
+    13 条规则：
+    /便宜|低价|实惠|省钱|最便宜|最低价/ → sort = price_asc
+    /贵|高价|最贵|最高价/               → sort = price_desc
+    /旗舰店/                            → shopType = 旗舰店
+    /自营/                              → shopType = 自营
+    /C店|淘宝店|个人店/                 → shopType = C店
+    品牌关键词（Nike/耐克/Adidas/阿迪达斯）
+    /运动鞋|跑步鞋/                     → category = 运动鞋
+    X以下/以内/不超过                    → priceRange.max = X
+    X以上/起/起步                        → priceRange.min = X
+    X到Y / X至Y                         → priceRange = { min:X, max:Y }
+  → validateFilter() 白名单校验
+    sort: 仅允许 default / price_asc / price_desc
+    shopType: 仅允许 旗舰店 / C店 / 自营
+    priceRange: min ≥ 0, max ≥ 0，非法值丢弃
+    未知字段: 静默丢弃，不抛异常
+
+  多轮对话机制：
+  每次请求返回 conversationId（UUID 随机生成），
+  客户端下次请求带上同一 conversationId → 后端可 Redis 缓存对话上下文。
+  Demo 阶段未接入 Redis，conversationId 仅透传。
+
+  类比：NLP 模块就像"餐厅的传菜翻译"。
+  顾客说"便宜点、大份的"（自然语言），
+  翻译成后厨的标准化指令（结构化 JSON）：
+  "排序方式=价格升序，分量=大份"。
+
+【4.5 收藏/搜索历史/评价/降价提醒模块 — Demo 增强功能】
+
+  ① FavoritesModule（收藏）
+  API 端点（均需 JWT 认证）：
+  GET    /favorites/lists              → 获取用户的所有收藏清单
+  POST   /favorites/lists { name }     → 创建新清单
+  DELETE /favorites/lists/:id          → 删除清单（含所有商品）
+  GET    /favorites/lists/:id/items    → 获取清单内商品列表
+  POST   /favorites/lists/:id/items { productId } → 添加商品到清单
+  DELETE /favorites/items/:id          → 移除单个商品
+
+  ② SearchHistoryModule（搜索历史）
+  自动保存：每次 POST /recognition/upload 成功后，
+  控制器从 Authorization 头手动提取 JWT → jwt.decode() 获取 userId →
+  searchHistoryService.save(userId, imageUrl, resultSnapshot)
+  GET /search-history（JWT 保护）：按 userId 查询最近 20 条
+
+  ③ ReviewsModule（评价摘要）
+  GET /products/:id/reviews
+  返回 positiveKeywords（正面标签）+ negativeKeywords（负面标签）+ summary（总结文字）
+
+  ④ PriceAlertModule（降价提醒）
+  GET/POST/PATCH/DELETE /price-alerts（JWT 保护）
+  支持修改目标价格（PATCH）
+
+  ⑤ NotificationModule（推送）
+  FCM 占位：Demo 阶段仅打印日志 [FCM Push] userId=xxx title="..." body="..."
+
+【4.6 安全基础设施（Common 层）】
+
+  四道防线，层层设防：
+
+  防线1 — Helmet HTTP 安全头：
+  自动设置 10+ 个 HTTP 安全头（XSS 防护、点击劫持防护等）。
+  一行代码：app.use(helmet())
+
+  防线2 — Throttler 限流：
+  全局 100 请求/分钟。超过限制返回 429 Too Many Requests。
+  类比：就像银行窗口"每人每次限办一项业务"，防止黄牛占窗口。
+
+  防线3 — JWT 守卫（JwtAuthGuard）：
+  标记 @UseGuards(JwtAuthGuard) 的端点必须带有效 Token。
+  未带 Token → 自动返回 401 Unauthorized。
+
+  防线4 — ValidationPipe 全局校验：
+  所有请求数据必须通过 DTO 规则校验。
+  规则写在 DTO 类中，使用 class-validator 装饰器：
+    @IsString()  → 必须是字符串
+    @IsNotEmpty()→ 不能为空
+    @IsArray()   → 必须是数组
+    @Matches(/^1[3-9]\d{9}$/) → 必须符合手机号格式
+
+  重要教训（踩过的坑）：
+  ValidationPipe 配置了 whitelist: true（白名单模式），
+  只保留 DTO 中声明了验证装饰器的字段。
+  如果 DTO 字段没有加 @IsString() 等装饰器，
+  该字段会被静默删除，导致数据丢失。
+  → 本项目所有 DTO 字段均已加装饰器。
+
+【4.7 种子数据模块（SeedModule）— 让 Demo"活"起来】
+
+  GET /seed/init：幂等操作（可重复调用，结果不变）
+  执行步骤：
+  1. 清空所有表（先删子表再删父表，尊重外键约束）
+  2. 插入 30 个商品（运动鞋/手机/笔记本/耳机/家电/服装/日用品/食品/书籍/箱包）
+  3. 每个商品 3 平台 × 7 个月 = 630 条价格记录
+     （2024-06-01 到 2025-06-01，价格使用正弦波动模拟真实涨跌）
+  4. 创建测试用户：11111111111 / 298556（bcrypt 哈希）
+  5. 创建默认收藏清单："默认清单"
+  6. 创建评价摘要数据（正面标签+负面标签+总结文字）
+
+================================================================
+第五章 · 客户端页面开发（展示层）
+================================================================
+
+  客户端的每个页面（Screen）遵循统一的状态管理模式：
+
+  状态 = "页面现在处于什么情况"
+  共 4 种状态，每个页面都要覆盖：
+
+  ┌──────────┬──────────────────────────────────┐
+  │ 状态       │ 用户看到什么                         │
+  ├──────────┼──────────────────────────────────┤
+  │ loading   │ 骨架屏（3 张灰色卡片闪烁）或加载圈     │
+  │ error     │ 红色错误图标 + 错误信息 + 重试按钮     │
+  │ empty     │ 灰色图标 + 提示文字（如"暂无数据"）     │
+  │ data      │ 实际内容（商品卡片/列表/图表）          │
+  └──────────┴──────────────────────────────────┘
+
+  类比：这四种状态就像"自动售货机"的四种情况：
+  loading = "正在出货中，请稍候"
+  error   = "机器故障，请按退币按钮重试"
+  empty   = "该商品已售罄"
+  data    = "商品掉落，请取货"
+
+【5.1 应用启动与路由（app.dart）】
+
+  应用启动时首先进入 /splash（启动页），检测本地是否有未过期的 Token。
+  有 → 自动登录，跳转首页（/）
+  无 → 跳转登录页（/login）
+
+  路由表（11 条）：
+  /splash         → SplashScreen       启动页（静默登录检测）
+  /login          → LoginScreen        登录/注册（手机号+密码切换）
+  /               → HomeScreen         首页（拍照入口+个人中心按钮）
+  /camera         → CameraScreen       拍照页（预览+确认上传+权限处理）
+  /results        → ResultsScreen      结果页（骨架屏+筛选+下拉刷新）
+  /detail/:id     → DetailScreen       详情页（价格+趋势图+评价+降价提醒）
+  /favorites      → FavoritesScreen    收藏夹（展开清单+商品管理）
+  /profile        → ProfileScreen      个人中心（导航+退出登录）
+  /search-history → SearchHistoryScreen 搜索历史
+  /price-alerts   → PriceAlertsScreen  降价提醒（编辑+删除）
+  /detail/:id     → DetailScreen       商品详情
+
+  导航方式：push/pop（栈式），不是 go（替换式）。
+  为什么：Android 返回键依赖路由栈。用 go 会清空栈，
+  导致按返回键直接退出 App，而不是回到上一页。
+
+【5.2 首页（home_screen.dart）— App 的"门面"】
+
+  布局（从上到下）：
+  AppBar（标题"识物比价"+ 👤 个人中心按钮）
+  ↓
+  大相机图标（80px）
+  ↓
+  标题文字"拍照识物·多平台比价"
+  ↓
+  说明文字
+  ↓
+  "开始拍照"大按钮（→ push /camera）
+  ↓
+  底部"支持 Android / iOS / 鸿蒙"文字
+
+【5.3 拍照页（camera_screen.dart）— 权限处理核心】
+
+  状态机设计（三种状态来回切换）：
+  ① 无图片：显示"拍照"和"相册"两个大按钮
+  ② 有图片：全屏预览（InteractiveViewer 支持双指缩放）
+            底部 [重拍] [确认上传]
+  ③ 上传中：LoadingWidget("正在识别...")
+
+  权限处理（四种结果一一处理）：
+  枚举 PickResult { success, cancelled, permissionDenied, error }
+
+  success → 设置 _selectedImage，进入预览状态
+  cancelled → 什么都不做（用户主动放弃）
+  permissionDenied → 弹出 AlertDialog，引导去系统设置
+  error → SnackBar 显示错误信息
+
+【5.4 结果页（results_screen.dart）— 状态管理核心】
+
+  这是项目中最复杂的页面，融合了多个功能：
+
+  ① 搜索流程：
+    camera_screen 拍照 → compressAndEncode(File) → base64Encode 编码
+    → searchProvider.search(base64)
+    → POST /recognition/upload
+    → 返回 Product[] → AsyncData(products)
+    → UI 自动刷新
+
+  ② 加载态：shimmer 骨架屏（3 张半透明灰色卡片闪烁）
+    shimmer 包原理：用线性渐变动画模拟闪烁效果。
+    用 ListView.builder + itemCount=3 写死 3 个占位 Card，
+    每个 Card 内用 Container 模拟 图片区(140px)+ 标题(16px)+ 价格(14px)+ 三行(12px)。
+    数据到达后 itemCount 变为真实商品数，切换无跳动。
+
+  ③ 下拉刷新：RefreshIndicator
+    调用 searchProvider.refresh() → 用缓存的 _lastImages 重查，不重复上传。
+
+  ④ NLP 筛选：
+    筛选栏 TextField + 发送按钮
+    → _applyNlpFilter(query)
+    → POST /nlp/filter
+    → 返回 { conversationId, filter }
+    → filterProvider.applyFilter(filter)
+    → _applyFilter(products, filter)：客户端排序/过滤
+    → 列表即时更新
+
+  ⑤ 筛选逻辑 _applyFilter：
+    shopType → 过滤 platformPrices 中包含指定类型的商品
+    priceRange → 过滤 lowestPrice 在 [min, max] 内的商品
+    sort → price_asc / price_desc 排序
+
+  ⑥ 空状态区分：
+    - 搜索无结果：emptyWidget("未找到匹配的商品")
+    - 筛选后无结果：emptyWidget("当前筛选条件下无匹配")
+
+【5.5 详情页（detail_screen.dart）— 功能聚合页】
+
+  复合布局（SingleChildScrollView 包裹）：
+
+  ① 平台价格卡片区
+    从 history 响应中取各平台最新价格 → Card 横排显示
+    平台名 | ¥价格（最新价高亮 primary 色）
+
+  ② 降价提醒按钮
+    OutlinedButton + notifications 图标
+    → 弹出 AlertDialog 输入目标价格
+    → POST /price-alerts
+
+  ③ 历史趋势图（PriceTrendChart — fl_chart）
+    数据准备：
+    - 收集所有日期 → 排序 → 建立日期→X轴索引映射
+    - 三条线对应三平台，颜色：淘宝=orange, 京东=red, 拼多多=teal
+    - 每条线 7 个数据点（2024-06 到 2025-06）
+    X 轴处理：
+    - 日期格式 "2024-06-01" → 截取 "06-01"（5-10 位）
+    - 旋转 -0.6 弧度（约 34°）避免重叠
+    - interval = 1（显示所有标签）
+    - reservedSize = 42（底部留白）
+    历史最低价：
+    - 红色虚线（dashArray: [5, 3]）贯穿全图
+    - 图表上方红字标注"历史最低 ¥XXX (平台)"
+
+  ④ 评价摘要卡片（ReviewSummaryCard）
+    调用 GET /products/:id/reviews
+    正面标签：绿色 Chip 显示（如"舒适""透气""百搭"）
+    负面标签：红色 Chip 显示（如"偏小""溢胶"）
+    总结文字
+    空评价：显示"暂无评价"灰色提示
+
+  ⑤ 价格明细表
+    各平台 × 7 个月逐行列出日期和价格
+
+【5.6 商品卡片（product_card.dart）— 收藏交互】
+
+  布局：大图 Stack（图片+右上角❤收藏按钮）
+  → 商品名（最多 2 行，超出省略号）
+  → 最低价 badge（primaryContainer 底色）
+  → Divider
+  → 三行平台价格：平台名(56px宽) | ¥价格 | _ShopTypeChip(店铺类型标签)
+    最低价行高亮 primary 色
+
+  ❤ 收藏按钮交互流程：
+  点击 ❤ → showModalBottomSheet 弹出收藏选择面板
+  → 列出已有清单（名称+商品数）
+  → 或输入名称新建清单
+  → 点清单 → addFavoriteItem(listId, productId)
+  → 成功 → ❤ 从白色边框变为红色填充 + SnackBar "已收藏"
+
+  店铺类型标签（_ShopTypeChip）：
+  旗舰店 → 红色背景（Colors.red.shade50）
+  自营   → 蓝色背景（Colors.blue.shade50）
+  C店    → 灰色背景（默认）
+
+【5.7 登录/注册页（login_screen.dart）】
+
+  单页双模式：_isLogin 布尔值切换
+  登录模式：手机号 + 密码
+  注册模式：手机号 + 验证码 + 密码
+
+  验证码：Demo 固定 123456，服务端日志打印供调试
+
+  流程：调用 authService → 成功 → 保存 Token → context.go('/')
+
+【5.8 Dio 拦截器（api_service.dart）— 网络层核心】
+
+  Dio 实例创建时注册一个 InterceptorsWrapper，包含两个钩子：
+
+  onRequest（请求发出前）：
+  await _storage.getAccessToken()
+  → 有 Token：options.headers['Authorization'] = 'Bearer $token'
+  → 无 Token：跳过（公开接口不需要认证）
+
+  onError（收到错误响应后）：
+  if (error.response?.statusCode == 401) {
+    // 尝试自动刷新 Token
+    读取 RefreshToken → POST /auth/refresh → 拿到新 AccessToken
+    → 保存新 Token → 重试原请求
+    → 失败 → clearTokens() → 页面应跳转 /login
+  }
+
+  类比：这个拦截器就像一个"智能助手"。
+  每次出门前自动帮你带门卡（onRequest），
+  门卡过期时自动去前台换新卡（onError），
+  换卡也失败才叫你自己去登记（跳登录页）。
+
+================================================================
+第六章 · Docker 容器化部署
+================================================================
+
+【什么是 Docker】
+
+  Docker 让你的应用在任何机器上"开箱即用"。
+  不需要手动安装 PostgreSQL、配置环境变量、解决版本冲突。
+  一个命令启动所有服务。
+
+  docker-compose.yml 文件描述了"需要启动哪些服务"：
+
+  ┌──────────────┬──────────────────────────────────┐
+  │ 服务           │ 配置                               │
+  ├──────────────┼──────────────────────────────────┤
+  │ postgres      │ postgres:16-alpine 镜像           │
+  │               │ 环境变量：用户名/密码/数据库名      │
+  │               │ 端口映射：5432:5432                │
+  │               │ 数据卷：pgdata（数据持久化）        │
+  │               │ 健康检查：pg_isready 每 5 秒        │
+  ├──────────────┼──────────────────────────────────┤
+  │ redis         │ redis:7-alpine 镜像               │
+  │               │ 端口映射：6379:6379                │
+  │               │ 数据卷：redisdata（AOF 持久化）     │
+  │               │ 健康检查：redis-cli ping           │
+  ├──────────────┼──────────────────────────────────┤
+  │ app           │ 构建上下文：./server                │
+  │               │ 端口映射：3000:3000                │
+  │               │ 依赖：postgres + redis（等健康检查）│
+  │               │ 环境文件：.env.docker               │
+  └──────────────┴──────────────────────────────────┘
+
+  启动命令：docker-compose up -d     （-d = 后台运行）
+  停止命令：docker-compose down
+  查看日志：docker-compose logs -f app
+
+  docker-compose.yml 中的 depends_on + healthcheck：
+  app 容器不会在 postgres 和 redis 就绪前启动。
+  避免"数据库还没启动，App 就连数据库报错"的竞态问题。
+
+  Volumes（数据卷）的作用：
+  容器删除后，数据卷保留。
+  类比：容器是"租的房子"，数据卷是"自己的家具"。
+  退租（删容器）时家具（数据）不会被房东扔掉。
+
+  .env vs .env.docker：
+  .env          → 本地开发用（DB_HOST=localhost, REDIS_HOST=localhost）
+  .env.docker   → Docker 用（DB_HOST=postgres, REDIS_HOST=redis）
+  Docker 内部用"服务名"作为主机名，Docker DNS 自动解析。
+
+================================================================
+第七章 · 完整开发流程串讲（从零到上线）
+================================================================
+
+  以下是一个零基础开发者按照本项目模式从零构建的完整步骤：
+
+  Step 1 ─ 环境准备（1 小时）
+    □ 安装 Node.js 18
+    □ 安装 Flutter SDK 3.x
+    □ 安装 PostgreSQL 16
+    □ 安装 Docker Desktop（可选）
+    □ 安装 VS Code + Flutter/Dart 插件
+
+  Step 2 ─ 创建项目骨架（30 分钟）
+    □ flutter create 客户端项目
+    □ nest new 服务端项目
+    □ 安装所有依赖包（npm install / flutter pub get）
+
+  Step 3 ─ 数据库设计（1 小时）
+    □ 用纸笔画 ER 图（实体关系图）
+    □ 创建 PostgreSQL 数据库 smart_shopping
+    □ 定义 TypeORM Entity 类（8 个）
+    □ 配置 database.config.ts
+    □ 启动服务器 → TypeORM 自动建表
+
+  Step 4 ─ 服务端开发（按模块逐个推进，每模块约 30-60 分钟）
+    □ Seed 模块（种子数据，最先做 → 方便测试）
+    □ Auth 模块（注册/登录/JWT）
+    □ Recognition 模块（拍照→识别→匹配→价格聚合）
+    □ Product/Comparison/History 模块（数据查询）
+    □ NLP 模块（关键词规则→AI 调用→校验）
+    □ Favorites/SearchHistory/Reviews/PriceAlert 模块
+    □ Common 层（Guard/Decorator/Filter/Interceptor）
+
+  Step 5 ─ 客户端开发（按页面逐个推进，每页面约 30-60 分钟）
+    □ app.dart + 路由表
+    □ Splash 页 + Login 页
+    □ Home 页 + Camera 页
+    □ Results 页 + ProductCard 组件
+    □ Detail 页 + PriceTrendChart + ReviewSummaryCard
+    □ Favorites/Profile/SearchHistory/PriceAlerts 页
+    □ 公共组件（Loading/Error/Empty）
+
+  Step 6 ─ 联调测试（每个功能一条龙测试）
+    □ 注册新用户 → 登录 → 拍照 → 识别 → 筛选 → 详情 →
+      收藏 → 设降价提醒 → 检查搜索历史 → 退出登录
+    □ Android 模拟器 + iOS 模拟器都跑一遍
+    □ 不填 AI Key 也跑一遍（确认 Mock 兜底正常）
+
+  Step 7 ─ 部署上线
+    □ docker-compose up -d
+    □ 验证 http://localhost:3000 可访问
+    □ 填写真实 AI Key 和 JWT 密钥
+
+================================================================
+第八章 · 技术术语速查表（按字母序）
+================================================================
+
+  ┌─────────────────┬───────────────────────────────────────────────┐
+  │ 术语              │ 解释 + 类比                                     │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ API              │ Application Programming Interface            │
+  │                  │ 应用程序接口。两个软件之间通信的"契约"。       │
+  │                  │ 类比：餐厅里的菜单。                              │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ AsyncNotifier    │ Riverpod 的一种 Provider，管理异步数据。        │
+  │                  │ 类比：外卖配送员。状态=等待接单/取餐中/已送达。  │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Base64           │ 二进制数据→纯文本的编码方式。                  │
+  │                  │ 用于在 JSON 中传输图片。                       │
+  │                  │ 类比：把照片放进信封（文本格式）邮寄。           │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ bcrypt           │ 密码哈希算法。不可逆（不能从哈希反推密码）。     │
+  │                  │ 类比：碎纸机。一旦碎掉，无法还原。              │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ CORS             │ Cross-Origin Resource Sharing                │
+  │                  │ 允许不同来源的请求（如手机访问电脑服务器）。      │
+  │                  │ 类比：小区门禁白名单。                          │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ CRUD             │ Create/Read/Update/Delete，数据四操作。        │
+  │                  │ 类比：仓库的进货/查货/改货/退货。               │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ DECIMAL(10,2)    │ 精确十进制数（10位总长，2位小数）。              │
+  │                  │ 用于金额，避免浮点数精度丢失。                  │
+  │                  │ 类比：用纸币计算（精确到分）vs 毛估估。         │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Dio              │ Flutter 的 HTTP 网络库。                       │
+  │                  │ 类比：快递车（负责发送和接收包裹）。             │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Docker           │ 容器化平台。应用+依赖打包成"镜像"。             │
+  │                  │ 类比：标准化集装箱运输。                        │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ DTO              │ Data Transfer Object，请求/响应的数据结构定义。 │
+  │                  │ 类比：标准表格（姓名___日期___）。              │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Entity           │ TypeORM 中映射到数据库表的类。                  │
+  │                  │ 类比：数据库表的"身份证"。                     │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Enum             │ 枚举类型，限定取值范围。                        │
+  │                  │ 类比：多选题的固定选项 A/B/C/D。                │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ fl_chart         │ Flutter 图表库。本项目用于历史价格折线图。      │
+  │                  │ 类比：Excel 的图表功能。                        │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ FCM              │ Firebase Cloud Messaging，Google 推送服务。    │
+  │                  │ 类比：短信通知系统。                            │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ FutureBuilder    │ Flutter 组件，根据 Future 状态渲染不同 UI。     │
+  │                  │ 类比：自动门——有人=开门，没人=关门。            │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ go_router        │ Flutter 路由导航库。管理页面跳转和 URL 映射。   │
+  │                  │ 类比：图书馆楼层指南。                          │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Guard            │ Nest.js 守卫。决定请求是否可以访问端点。        │
+  │                  │ 类比：VIP 区域的保安。                          │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Helmet           │ HTTP 安全头中间件。                            │
+  │                  │ 类比：汽车的安全气囊。                          │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ HTTP             │ 超文本传输协议，互联网数据传输的基础。          │
+  │                  │ 类比：邮局的信件投递系统。                       │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ ILIKE            │ PostgreSQL 大小写不敏感的模糊匹配操作符。       │
+  │                  │ 类比：搜索引擎（不管输入大小写都能找到）。       │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Interceptor      │ 拦截器。在请求处理前后自动执行的函数。          │
+  │                  │ 类比：快递分拣中心的自动分拣机。                │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ JSON             │ JavaScript Object Notation                   │
+  │                  │ 轻量数据交换格式，人类可读。                    │
+  │                  │ 类比：国际通用的标准快递盒。                    │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ JSONB            │ PostgreSQL 的二进制 JSON 类型。                │
+  │                  │ 类比：Excel 里的"备注"列（自由格式）。          │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ JWT              │ JSON Web Token                              │
+  │                  │ 无状态身份认证令牌。                           │
+  │                  │ 类比：酒店房卡（限时+防伪+无需前台确认）。      │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ LLM              │ Large Language Model                        │
+  │                  │ 大语言模型（AI）。                              │
+  │                  │ 类比：一个读过海量书籍的"通才顾问"。           │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Mock             │ 模拟数据。真实服务不可用时的"替身"。           │
+  │                  │ 类比：彩排时的替身演员。                        │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Multimodal       │ 多模态。AI 能同时理解文本+图片等多种输入。     │
+  │                  │ 类比：健全人（既能看到又能听到）vs 单一感官。   │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ ORM              │ Object-Relational Mapping                    │
+  │                  │ 对象关系映射。代码对象↔数据库表的翻译器。       │
+  │                  │ 类比：自动翻译官。                              │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ pg               │ Node.js 的 PostgreSQL 驱动（数据库连接器）。    │
+  │                  │ 类比：手机的"SIM 卡"（连接网络的硬件接口）。    │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Provider         │ Riverpod 中存储和提供数据的单元。               │
+  │                  │ 类比：超市货架上的商品。                        │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ RefreshIndicator │ Flutter 的下拉刷新组件。                       │
+  │                  │ 类比：朋友圈下拉获取最新动态。                  │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Repository       │ TypeORM 中操作数据库的对象。                   │
+  │                  │ 类比：仓库管理员。                              │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ REST             │ Representational State Transfer              │
+  │                  │ 一种 API 设计风格，用 HTTP 动词操作资源。       │
+  │                  │ GET=读 POST=创建 PATCH=更新 DELETE=删除       │
+  │                  │ 类比：邮局的标准寄件格式。                       │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Riverpod         │ Flutter 状态管理库。                           │
+  │                  │ 类比：超市的电子标签系统（数据变→标签自动更新）。│
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Shimmer          │ Flutter 骨架屏加载动画库。                     │
+  │                  │ 类比：App 加载时的灰色占位条纹。                 │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ SQL              │ 结构化查询语言。操作数据库的标准语言。          │
+  │                  │ 类比：仓库管理员的口令（"把第3排第5格的东西拿来"）│
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ StateNotifier    │ Riverpod 的一种 Provider，管理可变状态。        │
+  │                  │ 类比：遥控器（改变频道→电视画面跟着变）。        │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Synchronize      │ TypeORM 的自动建表功能。                       │
+  │                  │ 类比：自动装修——你画出图纸，它自动施工。         │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Token            │ 令牌。身份认证的凭证。                          │
+  │                  │ 类比：酒店房卡、演唱会门票。                    │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ TypeScript       │ JavaScript 的超集，增加了类型系统。             │
+  │                  │ 类比：JS 是"便签"，TS 是"表格"（有格式约束）。 │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ TypeORM          │ TypeScript 的 ORM 框架。                       │
+  │                  │ 类比：全自动翻译官（代码↔SQL 双向翻译）。        │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ UUID             │ 通用唯一识别码。几乎不可能重复。                │
+  │                  │ 类比：全球唯一的身份证号码。                    │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ ValidationPipe   │ Nest.js 的数据校验管道。                       │
+  │                  │ 类比：安检门（不合规的请求→拒绝）。              │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ Volume           │ Docker 数据卷。容器外部的持久化存储。           │
+  │                  │ 类比：自己的家具（退租不会被扔掉）。             │
+  ├─────────────────┼───────────────────────────────────────────────┤
+  │ YAML             │ 一种人类可读的配置文件格式（缩进表示层级）。    │
+  │                  │ 类比：组织结构图。                              │
+  └─────────────────┴───────────────────────────────────────────────┘
+
+================================================================

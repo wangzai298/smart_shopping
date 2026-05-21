@@ -1,0 +1,452 @@
+============================================================
+智能识物比价购物 AI APP 助手 Demo 开发蓝图
+（单技术栈 · 跨平台适配版）
+============================================================
+适用场景：仅用于框架搭建与功能演示，不涉及生产部署与性能调优
+
+一、Demo 目标
+--------------
+搭建一个可运行的基础框架，验证以下核心流程：
+1. 用户注册/登录（手机号+验证码 / 微信/支付宝一键登录）。
+2. 客户端拍照 -> 上传图片至服务端。
+3. 服务端调用豆包多模态大模型 API 获得商品属性（Key未填时使用mock数据）。
+4. 服务端基于属性匹配 mock 商品数据，返回多平台比价列表。
+5. 客户端以卡片列表展示结果（含骨架屏加载态、下拉刷新），并支持查看某个商品的历史价格趋势（含历史最低价标记、双指缩放）。
+6. 用户输入自然语言追加筛选条件（如“要便宜点的”），服务端调用同一豆包多模态 API 解析为结构化筛选参数，支持多轮对话连续追加条件。
+7. 商品评价抓取与摘要生成（多平台评价聚合，大模型生成优缺点总结）。
+8. 商品收藏夹（可创建多个收藏清单）。
+9. 搜索历史自动保存。
+10. 价格提醒设置（低于 ¥X 通知我）。
+
+Demo 严格遵循：
+- 禁止任何端侧 AI SDK（豆包 SDK、ML Kit 等），所有 AI 能力由服务端提供。
+- 使用单一、明确的技术栈，不引入备选方案。
+- 确保客户端同时适配 Android / iOS / 鸿蒙三个平台。
+
+二、技术栈（唯一指定）
+--------------
+客户端：Flutter 3.x（Dart）
+  - 状态管理：Riverpod 2.x
+  - 网络请求：dio 5.x
+  - 图表展示：fl_chart 0.x
+  - 路由管理：go_router 10.x
+  - 图片选择：image_picker 1.x
+  - 骨架屏：shimmer 3.x
+  - 本地存储：flutter_secure_storage（Token 安全存储）+ sqflite（搜索历史/收藏缓存）
+  - 手势支持：InteractiveViewer（图表缩放）
+  - 跨平台能力：Flutter 原生支持 Android、iOS；鸿蒙平台通过 flutter_ohos（社区适配）运行同一套 Dart 代码。
+
+服务端：Node.js 18 + Nest.js 10
+  - 数据库：PostgreSQL（通过 TypeORM + pg 驱动）
+  - 认证：@nestjs/jwt + @nestjs/passport + passport-jwt（JWT 双令牌机制）
+  - AI 视觉与对话：火山引擎豆包多模态大模型 API（如 doubao-seed-2.0-lite 或 doubao-1.5-vision-pro），单接口同时支持图像理解与文本生成
+  - 限流：@nestjs/throttler（全局 + 敏感接口）
+  - 安全：Helmet（HTTP 头安全）
+  - 内容审核：火山引擎内容安全 API / 阿里云绿网（图片审核）
+  - 任务队列：Bull + Redis（价格提醒定时扫描）
+  - 推送：Firebase Admin SDK（FCM 推送）
+  - 部署：Docker + docker-compose（PostgreSQL + Redis + App 一键启动）
+  - 环境变量：dotenv（.env 文件注入）
+
+说明：服务端所有 AI 调用代码均预留密钥配置项，密钥留空时代码自动回退至 mock 数据。
+
+三、跨平台适配方案
+--------------
+1. Flutter 通过同一套 Dart 代码库生成 Android、iOS、鸿蒙三个平台的安装包。
+2. 相机/相册调用统一使用 image_picker 插件，该插件在 Android、iOS 上已稳定支持；鸿蒙平台需在 pubspec.yaml 中引入 image_picker 的鸿蒙适配版本（如 image_picker_ohos），并在平台目录下做极少量原生配置。
+3. 网络请求、图表、路由等纯 Dart 库无需额外适配，可直接运行于三个平台。
+4. 针对鸿蒙的特殊配置：
+   - 在 client/harmony/ 目录下存放鸿蒙签名证书、打包脚本等（与 Android/iOS 同级）。
+   - 在 pubspec.yaml 中使用依赖覆盖方式引入适配版插件（如 flutter_ohos 提供的替代库）。
+5. Demo 阶段适配原则：优先保证 Android 与 iOS 完全可跑，鸿蒙平台仅保留工程结构与占位配置，确保开发者在需要时能快速补全，不阻塞核心流程验证。
+6. 所有平台统一通过 http://服务端IP:3000 访问后端，客户端配置文件 api_config.dart 中根据不同平台获取 IP（模拟器用 10.0.2.2，真机用局域网 IP）。
+
+四、项目目录结构与生成内容
+--------------
+
+根目录：smart-shopping-assistant/
+
+├── client/                         # Flutter 客户端
+│   ├── android/                    # Android 原生工程（由 flutter create 生成）
+│   ├── ios/                        # iOS 原生工程
+│   ├── harmony/                    # 鸿蒙原生工程（放置 flutter_ohos 需要的配置、签名等）
+│   ├── lib/
+│   │   ├── main.dart               # 应用入口，ProviderScope 包裹
+│   │   ├── app.dart                # MaterialApp 配置（路由表、主题）
+│   │   ├── config/
+│   │   │   ├── api_config.dart     # 后端基地址（动态获取，适配模拟器/真机）
+│   │   │   └── app_theme.dart      # 全局主题配置
+│   │   ├── models/
+│   │   │   ├── product.dart        # 商品模型（id, name, image, platformPrices列表, lowestPrice等）
+│   │   │   ├── filter.dart         # 筛选条件模型（sort, priceRange, shopType, brand）
+│   │   │   ├── user.dart           # 用户模型（id, phone, nickname, avatarUrl）
+│   │   │   ├── search_history.dart # 搜索历史模型
+│   │   │   ├── favorite_list.dart  # 收藏清单模型
+│   │   │   ├── price_alert.dart    # 价格提醒模型
+│   │   │   └── review_summary.dart # 评价摘要模型
+│   │   ├── services/
+│   │   │   ├── api_service.dart    # dio 实例封装，提供 uploadImage()、fetchHistory()、sendFilter() 等方法
+│   │   │   ├── auth_service.dart   # 登录/注册/Token 刷新/第三方登录
+│   │   │   ├── camera_service.dart # 调用 image_picker 拍照或选图，返回压缩后的图片文件
+│   │   │   ├── storage_service.dart # flutter_secure_storage 封装（Token 存取）
+│   │   │   └── notification_service.dart # 推送初始化与权限请求
+│   │   ├── providers/
+│   │   │   ├── search_provider.dart # 管理识别结果状态（AsyncValue<List<Product>>）
+│   │   │   ├── filter_provider.dart # 管理当前筛选条件和多轮对话上下文
+│   │   │   ├── auth_provider.dart   # 用户认证状态（登录/登出/Token刷新）
+│   │   │   ├── favorites_provider.dart # 收藏清单与商品管理
+│   │   │   ├── history_provider.dart   # 搜索历史管理
+│   │   │   └── price_alert_provider.dart # 价格提醒管理
+│   │   ├── screens/
+│   │   │   ├── splash_screen.dart   # 启动页（静默登录检测）
+│   │   │   ├── login_screen.dart    # 登录/注册页（手机号+验证码 / 微信/支付宝）
+│   │   │   ├── home_screen.dart     # 首页（拍照入口 + 搜索历史 + 说明文字）
+│   │   │   ├── camera_screen.dart   # 拍照界面（全屏预览、确认/重拍按钮）
+│   │   │   ├── results_screen.dart  # 结果列表页（顶部筛选输入框 + 骨架屏 + 下拉刷新 + 商品卡片流）
+│   │   │   │   └── widgets/
+│   │   │   │       ├── product_card.dart      # 商品卡片（图片、名称、平台价格行、店铺类型标签）
+│   │   │   │       ├── price_trend_chart.dart  # fl_chart 折线图（历史最低标记 + InteractiveViewer 缩放）
+│   │   │   │       └── review_summary_card.dart # 评价摘要卡片
+│   │   │   ├── detail_screen.dart   # 商品详情与多平台价格明细
+│   │   │   ├── favorites_screen.dart # 收藏清单列表与商品管理
+│   │   │   ├── history_screen.dart   # 搜索历史列表
+│   │   │   ├── price_alerts_screen.dart # 降价提醒管理
+│   │   │   └── profile_screen.dart   # 个人中心（头像、昵称、退出登录）
+│   │   ├── widgets/                # 公共组件（加载指示器、骨架屏、错误+重试、空状态占位图）
+│   │   └── utils/                  # 图片压缩、价格格式化等工具
+│   ├── test/                       # 基础测试（可留空）
+│   └── pubspec.yaml                # 依赖声明（dio, riverpod, go_router, fl_chart, image_picker, shimmer, flutter_secure_storage, sqflite，以及鸿蒙所需覆盖依赖）
+
+├── server/                         # Nest.js 服务端
+│   ├── src/
+│   │   ├── main.ts                 # 启动应用，启用 CORS + Helmet + 全局验证管道
+│   │   ├── app.module.ts           # 导入各业务模块 + TypeORM.forRoot(PostgreSQL配置) + ThrottlerModule + BullModule
+│   │   ├── config/
+│   │   │   ├── doubao.config.ts    # 豆包多模态 API 配置（apiKey, endpoint等，均留空占位）
+│   │   │   ├── database.config.ts   # TypeORM PostgreSQL 配置（host, port, username, password, database）
+│   │   │   ├── redis.config.ts      # Redis 配置（Bull 队列依赖）
+│   │   │   ├── jwt.config.ts        # JWT 配置（secret, expiresIn）
+│   │   │   └── storage.config.ts    # 对象存储配置（头像/商品图片上传，留空占位）
+│   │   ├── common/                  # 公共模块
+│   │   │   ├── guards/
+│   │   │   │   ├── jwt-auth.guard.ts    # JWT 鉴权守卫
+│   │   │   │   └── throttler.guard.ts  # 限流守卫（可扩展）
+│   │   │   ├── decorators/
+│   │   │   │   └── current-user.decorator.ts # @CurrentUser() 装饰器
+│   │   │   ├── filters/
+│   │   │   │   └── http-exception.filter.ts # 全局异常过滤器（统一错误响应格式）
+│   │   │   └── interceptors/
+│   │   │       └── response.interceptor.ts  # 响应格式化拦截器（统一 { success, data } 包裹）
+│   │   ├── entities/
+│   │   │   ├── product.entity.ts         # 商品实体（id uuid, name, category, brand, attributes jsonb, imageUrl）
+│   │   │   ├── price-history.entity.ts   # 价格历史实体（id int, productId, platform, price decimal, date date）
+│   │   │   ├── user.entity.ts            # 用户实体（id uuid, phone, email, password_hash, wechat_openid, alipay_userid, nickname, avatar_url）
+│   │   │   ├── search-history.entity.ts  # 搜索历史实体（id serial, user_id, image_url, result_snapshot jsonb, created_at）
+│   │   │   ├── favorite-list.entity.ts   # 收藏清单实体（id serial, user_id, name, is_public, created_at）
+│   │   │   ├── favorite-item.entity.ts   # 收藏商品实体（id serial, list_id, product_id, added_at）
+│   │   │   ├── price-alert.entity.ts     # 价格提醒实体（id serial, user_id, product_id, target_price decimal, platform, is_active）
+│   │   │   └── review-summary.entity.ts  # 评价摘要实体（id serial, product_id, platform, positive_keywords text[], negative_keywords text[], summary text）
+│   │   ├── modules/
+│   │   │   ├── auth/                # 认证模块
+│   │   │   │   ├── auth.module.ts
+│   │   │   │   ├── auth.controller.ts    # POST /auth/register, /auth/login, /auth/refresh, /auth/wechat-login, /auth/alipay-login, /auth/send-sms-code
+│   │   │   │   ├── auth.service.ts       # 注册、登录、Token签发/刷新、第三方OAuth
+│   │   │   │   └── dto/                  # register.dto.ts, login.dto.ts, refresh.dto.ts
+│   │   │   ├── users/               # 用户信息模块
+│   │   │   │   ├── users.module.ts
+│   │   │   │   ├── users.controller.ts   # GET /users/me, PATCH /users/me
+│   │   │   │   └── users.service.ts
+│   │   │   ├── recognition/         # 多模态识别模块
+│   │   │   │   ├── recognition.controller.ts  # POST /recognition/upload（支持 images: string[] 多张图片）
+│   │   │   │   ├── recognition.service.ts     # 调用豆包多模态 API 进行商品识别；若Key为空则返回mock数据
+│   │   │   │   └── dto/upload-image.dto.ts
+│   │   │   ├── product/             # 商品查询模块
+│   │   │   │   ├── product.controller.ts      # GET /products/search?category=...&brand=...
+│   │   │   │   ├── product.service.ts         # 基于识别结果查询 PostgreSQL，返回商品+最新平台价格
+│   │   │   │   └── dto/search-product.dto.ts
+│   │   │   ├── comparison/          # 比价聚合
+│   │   │   │   ├── comparison.controller.ts   # GET /comparison/:productId
+│   │   │   │   └── comparison.service.ts      # 聚合某商品各平台最新价格（从price_history取最近一次）
+│   │   │   ├── history/             # 历史价格
+│   │   │   │   ├── history.controller.ts      # GET /products/:id/history（响应含 lowestPrice 标记）
+│   │   │   │   └── history.service.ts         # 按平台分组、按日期排序返回价格序列，计算全时段最低价
+│   │   │   ├── nlp/                 # 自然语言筛选（复用豆包多模态 API 文本能力 + 多轮对话）
+│   │   │   │   ├── nlp.controller.ts          # POST /nlp/filter（接受 conversationId）
+│   │   │   │   ├── nlp.service.ts             # 调用同一豆包 API 解析筛选意图；Key为空时用关键词规则
+│   │   │   │   │                               # 多轮对话：Redis 缓存最近 5 轮上下文
+│   │   │   │   └── dto/nlp-request.dto.ts     # { query: string, conversationId?: string, context?: any }
+│   │   │   ├── favorites/           # 收藏模块
+│   │   │   │   ├── favorites.module.ts
+│   │   │   │   ├── favorites.controller.ts    # GET/POST/DELETE /favorites/lists, /favorites/lists/:id/items
+│   │   │   │   └── favorites.service.ts
+│   │   │   ├── search-history/      # 搜索历史模块
+│   │   │   │   ├── search-history.module.ts
+│   │   │   │   ├── search-history.controller.ts # GET/DELETE /search-history
+│   │   │   │   └── search-history.service.ts
+│   │   │   ├── price-alert/         # 价格提醒模块
+│   │   │   │   ├── price-alert.module.ts
+│   │   │   │   ├── price-alert.controller.ts  # GET/POST/PATCH/DELETE /price-alerts
+│   │   │   │   └── price-alert.service.ts
+│   │   │   ├── reviews/             # 评价摘要模块
+│   │   │   │   ├── reviews.module.ts
+│   │   │   │   ├── reviews.controller.ts      # GET /products/:id/reviews
+│   │   │   │   └── reviews.service.ts         # 聚合多平台评价，调用豆包生成优缺点摘要
+│   │   │   ├── seed/                # Mock数据初始化
+│   │   │   │   ├── seed.controller.ts         # GET /seed/init 重置并插入演示数据（含用户/收藏/评价样本）
+│   │   │   │   └── seed.service.ts            # 预置2-3个商品及其价格历史记录 + 测试用户
+│   │   │   └── notification/        # 推送模块
+│   │   │       ├── notification.module.ts
+│   │   │       └── notification.service.ts    # FCM 推送封装（价格提醒通知）
+│   │   ├── tasks/                   # Bull 定时任务
+│   │   │   ├── price-check.task.ts  # 每小时扫描价格变动，匹配用户提醒目标价，触发推送
+│   │   │   └── review-crawl.task.ts # 每日更新商品评价摘要
+│   │   ├── middleware/              # 异常过滤器（可选，用于统一错误响应格式）
+│   │   └── utils/                   # 图片处理工具（如需resize等，可用sharp）
+│   ├── data/                        # 数据库初始化脚本（可选，PostgreSQL 通常手动创建库）
+│   ├── .env.example                 # 环境变量模板
+│   ├── Dockerfile                   # 应用容器化配置
+│   ├── docker-compose.yml           # PostgreSQL + Redis + App 编排
+│   ├── package.json
+│   └── tsconfig.json
+
+五、架构设计与数据流
+--------------
+1. 用户启动 App → splash_screen 检测本地 Token → 有效则静默登录，无效则跳转 login_screen。
+2. 用户注册/登录（手机号+验证码 或 微信/支付宝 OAuth）→ 服务端签发 Access Token(15min) + Refresh Token(7d)。
+3. 后续所有请求在 Header 携带 Authorization: Bearer <accessToken>，服务端 jwt-auth.guard 校验。
+4. 用户点击拍照 → Flutter 通过 image_picker 获取图片 → 前端压缩至最大宽度1024px → 转 Base64。
+5. 客户端 POST /recognition/upload 发送 { images: [imageBase64] }（支持多张融合识别）。
+6. 服务端 recognition.service 调用豆包多模态大模型 API（传入图片和 prompt，如“识别图中的商品类别、品牌、颜色等属性”）→ 图片内容安全审核 → 若 Key 为空则跳过调用，直接返回 mock 数据。
+7. 识别结果包含 category, brand, attributes；随后调用 product.service 在 PostgreSQL 中模糊匹配商品（使用 ILIKE 或 JSONB 查询）。
+8. 匹配到的商品列表附带各平台最新价格（从 price_history 表窗口函数或子查询取最新记录），返回客户端。
+9. 服务端异步保存搜索历史。
+10. 客户端 results_screen 展示：
+    - 骨架屏（shimmer 闪烁占位）替代 loading 圆圈
+    - 数据到达后渲染商品卡片列表
+    - 支持下拉刷新（RefreshIndicator 重新请求）
+11. 用户点击某商品卡片 → 客户端 GET /products/:id/history → 服务端返回按平台分组的时间序列价格 + 全时段最低价标记 → 客户端弹窗或跳转详情页展示 fl_chart 折线图：
+    - 红色虚线标注历史最低价位置 + 文字标注"历史最低 ¥XXX"
+    - InteractiveViewer 包裹图表，支持双指缩放/拖动查看细节
+12. 用户在筛选输入框输入自然语言（如“要便宜点的”） → 客户端 POST /nlp/filter { query, conversationId, context }。
+13. 服务端 nlp.service 调用同一豆包多模态 API（仅传文本 prompt + Redis 缓存的对话上下文）解析为结构化 Filter JSON（Key为空时，用关键词规则引擎）。
+14. 服务端返回 filter 对象 + 新的 conversationId 给客户端，客户端根据 filter 对已有商品列表执行排序/过滤，UI 即时更新。
+15. 用户可连续追加条件（如“再便宜一点”→“只看旗舰店”），上下文由 conversationId 串联。
+16. 商品详情页可查看评价摘要：GET /products/:id/reviews → 显示优缺点标签 + 总结文字。
+17. 用户可将商品加入收藏夹（支持多个清单），管理收藏商品。
+18. 用户可设置价格提醒（低于 ¥X 通知我），定时任务扫描价格变动并推送 FCM 通知。
+
+六、模块间契约定义（统一数据格式）
+--------------
+
+### 6.1 图片上传与识别响应
+POST /recognition/upload
+请求：{ "images": ["base64...", "base64..."] }   // 支持多张图片
+响应：
+{
+  "success": true,
+  "data": {
+    "category": "运动鞋",
+    "brand": "Nike",
+    "attributes": { "color": "黑白", "style": "休闲" },
+    "products": [
+      {
+        "id": "uuid-1",
+        "name": "Nike Air Max 90 黑白",
+        "image": "https://example.com/img1.jpg",
+        "platformPrices": [
+          { "platform": "淘宝", "price": 799, "shopType": "C店", "url": "#" },
+          { "platform": "京东", "price": 849, "shopType": "旗舰店", "url": "#" },
+          { "platform": "拼多多", "price": 769, "shopType": "旗舰店", "url": "#" }
+        ],
+        "lowestPrice": 769
+      }
+    ]
+  }
+}
+
+### 6.2 历史价格响应
+GET /products/uuid-1/history
+响应：
+{
+  "success": true,
+  "data": {
+    "productId": "uuid-1",
+    "lowestPrice": { "price": 749, "platform": "拼多多", "date": "2024-06-01" },
+    "platforms": {
+      "淘宝": [
+        { "date": "2025-01-01", "price": 899 },
+        { "date": "2025-02-01", "price": 799 }
+      ],
+      "京东": [
+        { "date": "2025-01-01", "price": 899 },
+        { "date": "2025-02-01", "price": 849 }
+      ]
+    }
+  }
+}
+
+### 6.3 NLP 筛选请求与响应（多轮对话）
+请求：
+{
+  "query": "要便宜点的",
+  "conversationId": "conv-abc-123",        // 可选，多轮对话上下文标识
+  "context": { "currentProductIds": ["uuid-1", "uuid-2"] }
+}
+响应：
+{
+  "success": true,
+  "data": {
+    "conversationId": "conv-abc-123",       // 返回同一或新建的对话 ID
+    "filter": {
+      "sort": "price_asc",
+      "priceRange": { "min": 0, "max": 800 },
+      "shopType": "旗舰店",
+      "brand": "Nike"
+    }
+  }
+}
+（字段均可为空，客户端按需应用）
+
+### 6.4 认证相关接口契约
+POST /auth/register
+请求：{ "phone": "13800138000", "code": "123456", "password": "abc123" }
+响应：{ "success": true, "data": { "accessToken": "...", "refreshToken": "...", "user": {...} } }
+
+POST /auth/login
+请求：{ "phone": "13800138000", "password": "abc123" }
+响应：{ "success": true, "data": { "accessToken": "...", "refreshToken": "...", "user": {...} } }
+
+POST /auth/refresh
+请求：{ "refreshToken": "..." }
+响应：{ "success": true, "data": { "accessToken": "..." } }
+
+POST /auth/wechat-login
+请求：{ "code": "wx_oauth_code" }
+响应：{ "success": true, "data": { "accessToken": "...", "refreshToken": "...", "user": {...} } }
+
+POST /auth/send-sms-code
+请求：{ "phone": "13800138000" }
+响应：{ "success": true, "data": { "message": "验证码已发送" } }
+说明：同一手机号每小时限 3 次
+
+### 6.5 收藏模块接口契约
+GET /favorites/lists
+响应：{ "success": true, "data": [ { "id": 1, "name": "想买清单", "itemCount": 3 } ] }
+
+POST /favorites/lists
+请求：{ "name": "新清单" }
+响应：{ "success": true, "data": { "id": 2, "name": "新清单", "itemCount": 0 } }
+
+POST /favorites/lists/:id/items
+请求：{ "productId": "uuid-1" }
+响应：{ "success": true, "data": { "message": "已添加" } }
+
+### 6.6 价格提醒接口契约
+POST /price-alerts
+请求：{ "productId": "uuid-1", "targetPrice": 700, "platform": "拼多多" }
+响应：{ "success": true, "data": { "id": 1, "isActive": true } }
+
+### 6.7 评价摘要接口契约
+GET /products/uuid-1/reviews
+响应：
+{
+  "success": true,
+  "data": {
+    "positiveKeywords": ["舒适", "透气", "百搭"],
+    "negativeKeywords": ["偏小", "溢胶"],
+    "summary": "用户普遍认为此款运动鞋舒适透气且百搭，但部分反映尺码偏小、做工有溢胶现象。"
+  }
+}
+
+七、Demo 数据准备
+--------------
+调用 /seed/init 后，PostgreSQL 中预置以下数据：
+测试用户：
+  - 手机号: 13800138000, 密码: test123（bcrypt 哈希存储）
+商品1：Nike Air Max 90 黑白
+  - 类目: 运动鞋, 品牌: Nike, 属性: {"color":"黑白","style":"休闲"}
+  - 价格历史:
+     淘宝: 2024-06(749), 2025-01(899), 2025-02(799)
+     京东: 2024-06(769), 2025-01(899), 2025-02(849)
+     拼多多: 2024-06(729), 2025-01(809), 2025-02(769)
+  - 评价摘要: 正面[舒适,透气,百搭] / 负面[偏小,溢胶]
+商品2：Adidas Ultraboost 22 白色
+  - 类目: 运动鞋, 品牌: Adidas, 属性: {"color":"白色","style":"跑步"}
+  - 价格历史:
+     淘宝: 2024-06(989), 2025-01(1099), 2025-02(999)
+     京东: 2024-06(999), 2025-01(1099), 2025-02(1049)
+     拼多多: 2024-06(929), 2025-01(1049), 2025-02(949)
+  - 评价摘要: 正面[回弹好,轻便] / 负面[不耐脏]
+
+八、需要留空或人工填写的配置项
+--------------
+1. server/.env（复制 .env.example 后填写）：
+   - DB_HOST=localhost, DB_PORT=5432, DB_USER=postgres, DB_PASS=, DB_NAME=smart_shopping
+   - DOUBAO_API_KEY= （空字符串）
+   - JWT_SECRET=, JWT_REFRESH_SECRET=
+   - SMS_API_KEY= （短信验证码服务）
+   - WECHAT_APP_ID=, WECHAT_APP_SECRET=
+   - ALIPAY_APP_ID=, ALIPAY_PRIVATE_KEY=
+   - REDIS_HOST=localhost, REDIS_PORT=6379
+   - FCM_SERVER_KEY= （Firebase 推送）
+   - CONTENT_MODERATION_KEY= （图片审核服务）
+2. server/src/config/doubao.config.ts:
+   - endpoint: 'https://ark.cn-beijing.volces.com/api/v3/responses'
+3. server/src/modules/recognition/recognition.service.ts 和 server/src/modules/nlp/nlp.service.ts：
+   - 调用豆包 API 的 Key 留空，代码中判断：若 Key 为空则直接返回 mock 结果或规则兜底，同时保留完整的 HTTP 请求结构供后续填入。
+4. client/lib/config/api_config.dart:
+   - lanIp 需人工根据真机运行环境修改（模拟器自动使用 10.0.2.2）。
+
+九、开发注意事项（人工把关清单）
+--------------
+1. 【禁止端侧 AI】客户端代码中不得引入任何形式 AI SDK，仅调用服务端 REST API。
+2. 【契约一致性】所有接口响应格式必须严格匹配第六节定义，字段名称、类型、嵌套层级必须前后端统一，AI 生成代码时容易捏造字段，需人工比对修正。
+3. 【Mock 兜底】当豆包 API Key 未配置时，服务端必须返回有效 mock 数据，不能抛出异常或返回空数组导致流程中断。
+4. 【图片压缩】客户端拍照后须压缩图片（限制宽高 ≤1024px），避免上传过大 Base64 字符串导致服务端超时或内存溢出。
+5. 【跨平台适配测试】至少分别在 Android 模拟器、iOS 模拟器上运行通过，鸿蒙平台可先仅保留工程结构。注意 image_picker 在不同平台上的权限配置（AndroidManifest.xml、Info.plist 等）需手动添加。
+6. 【异常处理 UI】每个网络请求需 try-catch，加载中显示骨架屏（shimmer），错误显示提示文字与重试按钮，无结果时显示空状态。
+7. 【PostgreSQL 配置】务必在本地或远程安装并启动 PostgreSQL 服务，创建名为 smart_shopping 的数据库，并在 .env 中填写正确的连接信息。entity 中的 attributes 字段推荐使用 PostgreSQL 的 jsonb 类型以支持灵活查询。
+8. 【CORS 与安全】服务端 main.ts 中必须调用 app.enableCors() + app.use(helmet())，否则客户端调试时会被拦截或存在安全风险。
+9. 【豆包输出校验】无论使用 mock、规则还是真实 API，服务端都必须对豆包返回的 JSON 做格式验证，非法字段丢弃并使用默认值。
+10.【路由与状态】确保结果页从搜索状态读取数据，避免页面切换时丢失上下文。使用 Riverpod 的 AsyncValue 管理搜索过程的四种状态：loading/data/error/empty。
+11.【Token 管理】客户端使用 flutter_secure_storage 存储 Token，dio 拦截器自动附加 Authorization 头，401 时自动尝试 refresh，refresh 失败则跳转登录页。
+12.【多轮对话上下文】NLP 模块使用 Redis 缓存对话上下文，Key 格式 nlp:conv:{conversationId}，TTL 30 分钟。
+13.【API 限流】全局 100 req/min，登录/短信接口 10 req/min。限流触发时返回 429 Too Many Requests。
+14.【图片审核】上传图片后先调用内容安全 API 检测，违规返回 400 { success: false, message: "图片内容违规" }。
+15.【推送权限】客户端首次启动时请求通知权限，用户拒绝后可在系统设置中手动开启。
+16.【Docker 部署】docker-compose.yml 中服务名代替 localhost（如 DB_HOST=postgres, REDIS_HOST=redis）。
+
+十、开发顺序建议
+--------------
+阶段1（核心功能）：
+  1. 用命令行创建 Flutter 项目和 Nest.js 项目，构建上述目录骨架。
+  2. 准备 PostgreSQL 环境，建立数据库；服务端：定义 Entity，配置 TypeORM 连接，编写 Seed 模块并插入 mock 数据（含测试用户）。
+  3. 服务端：实现 auth 模块（注册/登录/JWT）。
+  4. 服务端：实现 recognition 模块（调用豆包多模态 API，含 mock 分支 + 图片审核）。
+  5. 服务端：实现 product、comparison、history 查询逻辑（使用 PostgreSQL 特有函数如 ILIKE、jsonb_extract_path_text、窗口函数等，history 含全时段最低价计算）。
+  6. 服务端：实现 nlp 模块（调用同一豆包 API 文本能力，规则兜底版本 + Redis 多轮对话缓存）。
+  7. 客户端：搭建 MaterialApp、路由、启动页、登录页 UI。
+  8. 客户端：实现 auth_service、storage_service，对接认证接口。
+  9. 客户端：实现 api_service 与图片上传，对接识别接口，展示商品卡片（含骨架屏、下拉刷新）。
+
+阶段2（增强功能）：
+ 10. 服务端：实现 favorites、search-history 模块。
+ 11. 服务端：实现 reviews 模块（评价聚合 + 豆包摘要生成）。
+ 12. 服务端：实现 price-alert 模块 + price-check.task 定时扫描任务。
+ 13. 服务端：实现 notification 模块（FCM 推送）。
+ 14. 客户端：实现收藏夹、搜索历史页面。
+ 15. 客户端：实现评价摘要卡片展示。
+ 16. 客户端：实现价格提醒设置与管理页面。
+ 17. 客户端：历史趋势图增强（最低价标记 + InteractiveViewer 缩放）。
+ 18. 客户端：多轮对话筛选 UI（conversationId 传递）。
+
+阶段3（收尾）：
+ 19. 联合调试：Android/iOS 模拟器分别验证全流程，修正契约细节。
+ 20. 补充错误处理、加载态、空数据态，完成鸿蒙工程占位。
+ 21. Docker 容器化配置（Dockerfile + docker-compose.yml）。
+ 22. .env 环境变量模板与注入验证。
+
+===========================================================
+此文档作为唯一开发准则，用于指导 AI 生成各模块代码。
+所有涉及真实密钥、爬虫、部署策略的部分均不包含在本 demo 范围内。
+===========================================================

@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx get-shit-done-cc@latest *)",
+      "Skill(superpowers:writing-plans)",
+      "Skill(superpowers:verification-before-completion)",
+      "Bash(npm --version)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npx ts-node *)",
+      "Bash(curl -s http://localhost:3000/seed/init)",
+      "Bash(timeout 15 bash -c 'npx ts-node src/main.ts & *)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(timeout 12 bash -c 'npx ts-node src/main.ts & *)",
+      "Bash(timeout 20 bash -c ' *)",
+      "Bash(timeout 25 bash -c ' *)",
+      "Bash(node -e ' *)",
+      "Skill(superpowers:systematic-debugging)",
+      "Skill(gsd-map-codebase)",
+      "Bash(npx kill-port *)",
+      "Bash(curl -s -X POST http://localhost:3000/nlp/filter -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(curl -s -X POST http://localhost:3000/nlp/filter -H \"Content-Type: application/json\" -d '{\"query\":\"\"}')",
+      "Bash(curl -s -X POST http://localhost:3000/nlp/filter -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"Nike\\\\\"}\")",
+      "Bash(curl -s -X POST http://localhost:3000/nlp/filter -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"Adidas 500以内\\\\\"}\")",
+      "Bash(curl *)",
+      "Bash(ipconfig)",
+      "Bash(./gradlew --stop)",
+      "Bash(echo \"\\(exit: $?\\)\")",
+      "Bash(flutter clean *)",
+      "Bash(flutter pub *)",
+      "Bash(npm uninstall *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('lowestPrice:', json.dumps\\(d['data']['lowestPrice'], ensure_ascii=False\\)\\); print\\('platforms count:', len\\(d['data']['platforms']\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('category:', d['data']['category']\\); print\\('products:', len\\(d['data']['products']\\)\\)\")",
+      "Bash(git add *)"
+    ]
+  }
+}

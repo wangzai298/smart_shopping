@@ -1,0 +1,8 @@
+# 签名证书（不提交到版本控制）
+signing/*.p12
+signing/*.cer
+signing/*.p7b
+
+# 构建产物
+build/
+.hvigor/
