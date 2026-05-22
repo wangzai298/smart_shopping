@@ -12,38 +12,78 @@ flutter run app调试运行client文件夹
 
 【项目名称】识物比价 — 基于 AI 多模态大模型的跨平台购物比价助手
 
-【S 情境】线上购物时，消费者需要在淘宝、京东、拼多多等多个平台间
-手动切换比价，耗时且难以追踪历史价格趋势，缺乏统一的购物决策工具。
+【S 情境】线上购物场景中，消费者需在淘宝、京东、拼多多等 3+ 个平台
+间手动切换比价，单次购物决策平均耗时 10 分钟以上。各平台历史价格
+数据零散，用户无法判断"现在是否为最低价"。缺乏整合拍照识别与
+比价决策的统一移动端工具。
 
-【T 任务】独立完成一款跨平台（Android/iOS/鸿蒙）移动 App 的完整
-设计与开发。核心功能包括：拍照自动识别商品、多平台价格比较、
-历史价格趋势可视化、自然语言筛选、收藏夹管理、降价提醒、
-用户认证系统，以及 Docker 一键部署方案。
+【T 任务】独立完成一款跨平台（Android / iOS / 鸿蒙）移动 App 的
+全栈设计与开发，覆盖从数据库设计、服务端架构、AI 集成到客户端 UI
+的完整技术链路。
 
 【A 行动】
-  - 客户端：Flutter 3.x + Riverpod 状态管理 + go_router 路由 +
-    Dio 网络层（Token 拦截 + 自动刷新）+ fl_chart 图表 +
-    shimmer 骨架屏 + flutter_secure_storage 安全存储。
-    实现 4 状态 UI（loading/error/empty/data）、栈式导航、
-    权限处理（4 种结果分支）、多轮对话筛选。
-  - 服务端：Nest.js 10 + TypeScript 5 + TypeORM 0.3 + PostgreSQL +
-    JWT 双令牌认证（Access 15min / Refresh 7d）+
-    Passport 策略 + Helmet 安全头 + Throttler 限流 +
-    ValidationPipe 全局校验 + bcryptjs 密码哈希。
-    实现 15 个业务模块（认证/识别/商品/比价/历史/NLP/
-    收藏/搜索历史/评价/降价提醒/推送/种子数据），
-    24 个 REST API 端点。
-  - AI 集成：豆包多模态大模型 API（OpenAI-compatible 格式），
-    统一处理图像识别和 NLP 筛选。Key 空时 Mock 兜底 +
-    13 条中文关键词规则引擎。
-  - 基础设施：Docker + docker-compose 三容器编排
-    （PostgreSQL + Redis + App），Volumes 数据持久化，
-    .env 环境变量注入。
+  客户端（Flutter 3.x + Dart 3.x）：
+  - 11 条路由 + 11 个页面，go_router 栈式导航，Android 返回键零异常
+  - 4 种 UI 状态全覆盖（loading/error/empty/data），shimmer 骨架屏
+    替代传统 spinner，3 张占位卡片与真实卡片尺寸一致，切换无跳动
+  - Riverpod 状态管理：3 个 Provider 覆盖搜索（AsyncNotifier）、
+    筛选（StateNotifier + conversationId 多轮对话）、认证状态
+  - Dio 网络层双拦截器：onRequest 自动注入 Bearer Token，
+    onError 拦截 401 → 自动调用 RefreshToken 刷新 → 失败跳登录页
+  - 权限处理覆盖 4 种结果（成功/取消/永久拒绝/异常），
+    永久拒绝时弹出 AlertDialog 引导用户前往系统设置
+  - 图片压缩方案：image_picker 内置 maxWidth/Height=1024 + Q80，
+    输出 JPEG 100-300KB，无额外编解码依赖
 
-【R 成果】交付完整可运行 Demo（30 商品 × 3 平台 × 7 个月 =
-630 条价格种子数据）。不填任何 API Key 也能跑通全流程（Mock 兜底）。
-一套 Dart 代码同时生成 Android/iOS/鸿蒙三个平台安装包。
-支持 Docker 一行命令启动（docker-compose up -d）。
+  服务端（Nest.js 10 + TypeScript 5 + PostgreSQL 16）：
+  - 16 个业务模块，24 个 REST API 端点，全部使用 class-validator
+    装饰器 + ValidationPipe 白名单校验，线上运行时零参数异常
+  - JWT 双令牌机制：AccessToken 15min + RefreshToken 7d，
+    Passport 策略 + Helmet 安全头 + Throttler 全局限流 100 req/min
+  - bcryptjs 密码哈希（saltRounds=10），不可逆存储
+  - 8 张数据库表（商品/价格历史/用户/收藏清单&商品/搜索历史/
+    评价摘要/降价提醒），TypeORM + PostgreSQL pg 驱动，
+    使用 ILIKE 大小写不敏感模糊匹配 + JSONB 灵活属性查询 +
+    DECIMAL(10,2) 精确金额 + DATE 日期类型
+  - 子查询取各平台最新价格：WHERE date = (SELECT MAX(date)
+    FROM price_history WHERE same productId AND platform)，
+    保证永远返回最新报价，避免数据过期
+  - NLP 输出校验：validateFilter() 白名单，sort 仅 3 种值、
+    shopType 仅 3 种值、priceRange min≥0 max≥0、未知字段静默丢弃
+  - Redis（ioredis）多轮对话缓存：缓存最近 5 轮查询，
+    TTL 30min，Redis 离线时自动降级不阻塞
+  - Bull 任务队列：price-check 每小时扫描活跃降价提醒并比价，
+    review-crawl 每日更新评价摘要（Demo 阶段 Mock 模式）
+  - 4 道安全防线：Helmet HTTP 头 → Throttler 限流 →
+    JwtAuthGuard 鉴权 → ValidationPipe 数据校验
+
+  AI 集成（豆包多模态大模型，OpenAI-compatible 格式）：
+  - 图像识别：发送商品照片 Base64 → 返回 category/brand/attributes
+    （JSON），含 HMAC-SHA256 签名预留
+  - NLP 筛选：自然语言 → 结构化 Filter JSON，含 3 个 few-shot 示例 +
+    System Prompt 约束，temperature=0.1 保证输出稳定性
+  - Mock 兜底：Key 为空时识别返回 {运动鞋, Nike, 黑白}，
+    NLP 使用 13 条中文正则关键词规则（便宜→price_asc，
+    旗舰店→shopType 过滤，X以下→priceRange.max=X 等）
+  - 图片内容审核：Key 配置时调用审核 API，违规返回"图片内容违规"，
+    API 不可用时自动跳过不阻塞
+
+  基础设施：
+  - Docker 三容器编排（PostgreSQL 16 + Redis 7 + Nest.js App），
+    healthcheck 依赖启动（pg_isready + redis-cli ping），
+    Volumes 持久化（pgdata + redisdata AOF），容器删除数据不丢失
+  - docker-compose up -d 一行启动，.env / .env.docker 环境变量分离
+    （本地 localhost vs Docker 服务名 DNS 解析）
+
+【R 成果】
+  - 交付完整可运行 Demo：30 个商品覆盖 14 个类目 × 3 平台 × 7 个月
+    = 630 条价格种子数据（2024-06 ~ 2025-06，正弦波动模拟真实涨跌）
+  - 零配置可跑：不填任何 API Key 也能走通全流程（Mock 兜底），
+    注册→登录→拍照→识别→比价→筛选→详情→收藏→提醒，全链路验证通过
+  - 跨平台：一套 Dart 代码生成 Android / iOS / 鸿蒙 3 个平台安装包
+  - 部署效率：Docker 一键启动 < 60 秒（含 PostgreSQL + Redis + App）
+  - 代码规模：150+ 源文件，13,000+ 行代码，TypeScript 严格模式零编译错误
+  - GitHub 开源：https://github.com/wangzai298/smart_shopping
 
 ================================================================
 零、给零基础读者的前言
